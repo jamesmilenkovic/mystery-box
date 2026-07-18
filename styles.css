@@ -105,6 +105,23 @@ button {
   color: var(--purple-dark);
 }
 
+.clear-button {
+  align-self: flex-end;
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  margin-top: -6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--purple-dark);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.clear-button:active {
+  opacity: 0.6;
+}
+
 .option-input {
   font-size: 1.2rem;
   padding: 14px 16px;

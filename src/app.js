@@ -24,6 +24,7 @@ const optionInput = document.getElementById('option-input');
 const countHint = document.getElementById('count-hint');
 const soundToggle = document.getElementById('sound-toggle');
 const goButton = document.getElementById('go-button');
+const clearButton = document.getElementById('clear-button');
 
 const pickerSheet = document.getElementById('emoji-picker-sheet');
 const pickerSearch = document.getElementById('emoji-search');
@@ -128,6 +129,7 @@ function renderChips() {
 
   updateCountHint();
   updateGoButton();
+  clearButton.hidden = chips.length === 0;
 }
 
 function updateCountHint() {
@@ -163,6 +165,12 @@ function removeChip(index) {
   persistBox();
 }
 
+function clearChips() {
+  chips = [];
+  renderChips();
+  persistBox();
+}
+
 function commitInput({ all }) {
   const raw = optionInput.value;
   if (all) {
@@ -186,6 +194,8 @@ optionInput.addEventListener('keydown', (e) => {
     commitInput({ all: true });
   }
 });
+
+clearButton.addEventListener('click', clearChips);
 
 soundToggle.addEventListener('change', () => {
   soundOn = soundToggle.checked;
