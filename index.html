@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Mystery Box</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============ SETUP SCREEN (parent) ============ -->
+<section id="setup-screen">
+  <h1 class="title">Mystery Box</h1>
+
+  <div id="chip-list" class="chip-list" aria-live="polite"></div>
+
+  <input
+    id="option-input"
+    type="text"
+    inputmode="text"
+    autocomplete="off"
+    autocorrect="off"
+    autocapitalize="off"
+    placeholder="Type an option, then comma or Enter&hellip;"
+    class="option-input"
+  />
+
+  <p id="count-hint" class="count-hint"></p>
+
+  <label class="sound-toggle">
+    <input type="checkbox" id="sound-toggle" checked />
+    Sound
+  </label>
+
+  <button id="go-button" class="go-button" type="button" disabled>GO</button>
+</section>
+
+<!-- ============ TAP-TO-FIX EMOJI PICKER SHEET ============ -->
+<div id="emoji-picker-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Choose an emoji">
+    <div class="sheet-header">
+      <input
+        id="emoji-search"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        placeholder="Search&hellip;"
+        class="emoji-search"
+      />
+      <button id="emoji-picker-close" class="sheet-close" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div id="emoji-suggestion-grid" class="emoji-grid"></div>
+  </div>
+</div>
+
+<!-- ============ KID MODE ============ -->
+<section id="kid-screen" hidden>
+  <div id="box-stage" class="box-stage">
+
+    <button id="mystery-box" class="mystery-box" type="button" aria-label="Tap the mystery box">
+      <svg viewBox="0 0 200 200" width="100%" height="100%" aria-hidden="true">
+        <ellipse cx="100" cy="178" rx="70" ry="10" class="box-shadow" />
+        <rect x="35" y="90" width="130" height="90" rx="10" class="box-body" />
+        <rect x="35" y="90" width="130" height="20" class="box-body-highlight" />
+        <rect x="20" y="65" width="160" height="34" rx="8" class="box-lid" />
+        <rect x="90" y="20" width="20" height="160" class="box-ribbon-v" />
+        <rect x="20" y="72" width="160" height="20" class="box-ribbon-h" />
+        <path d="M 100 48 C 85 15 40 5 25 35 C 15 55 55 70 100 48 Z" class="box-bow" />
+        <path d="M 100 48 C 115 15 160 5 175 35 C 185 55 145 70 100 48 Z" class="box-bow" />
+        <circle cx="100" cy="48" r="10" class="box-bow-knot" />
+      </svg>
+    </button>
+
+    <div id="reveal-screen" class="reveal-screen" hidden>
+      <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+      <div id="reveal-emoji" class="reveal-emoji"></div>
+      <div id="reveal-label" class="reveal-label"></div>
+    </div>
+  </div>
+
+  <button id="parent-dot" class="parent-dot" type="button" aria-label="Parent options"></button>
+</section>
+
+<!-- ============ PARENT SHEET ============ -->
+<div id="parent-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet parent-sheet-content" role="dialog" aria-modal="true" aria-label="Parent options">
+    <button id="parent-respin" class="parent-action" type="button">Re-spin</button>
+    <button id="parent-edit" class="parent-action" type="button">Edit options</button>
+    <button id="parent-done" class="parent-action parent-action-done" type="button">Done</button>
+  </div>
+</div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

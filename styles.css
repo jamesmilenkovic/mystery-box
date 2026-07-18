@@ -1,0 +1,382 @@
+:root {
+  color-scheme: light;
+  --purple: #6c4ef5;
+  --purple-dark: #4c33b0;
+  --yellow: #ffd166;
+  --bg: #f4f1ff;
+  --ink: #2b2145;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Any element toggled via the `hidden` attribute (setup/kid screens, both
+   sheets, the reveal screen) must actually disappear, even though several
+   of those elements also set `display: flex` in their own class for when
+   they ARE shown. Without this, the class's `display` wins the cascade
+   over the browser default [hidden] rule and the "hidden" element still
+   renders. */
+[hidden] {
+  display: none !important;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* ============ Setup screen ============ */
+
+#setup-screen {
+  min-height: 100dvh;
+  padding: max(24px, env(safe-area-inset-top)) 20px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.title {
+  text-align: center;
+  font-size: 2rem;
+  margin: 8px 0 0;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 48px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: white;
+  border: 2px solid var(--purple);
+  border-radius: 999px;
+  padding: 6px 10px 6px 6px;
+  font-size: 1.1rem;
+}
+
+.chip-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.chip-emoji:active {
+  background: var(--bg);
+}
+
+.chip-label {
+  font-weight: 600;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--purple-dark);
+}
+
+.option-input {
+  font-size: 1.2rem;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 2px solid var(--purple);
+  background: white;
+  color: var(--ink);
+}
+
+.option-input:focus {
+  outline: 3px solid var(--yellow);
+}
+
+.count-hint {
+  margin: -8px 0 0;
+  min-height: 1.2em;
+  font-size: 0.95rem;
+  color: var(--purple-dark);
+  text-align: center;
+}
+
+.sound-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05rem;
+  align-self: center;
+}
+
+.sound-toggle input {
+  width: 22px;
+  height: 22px;
+}
+
+.go-button {
+  margin-top: auto;
+  padding: 20px;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  border: none;
+  border-radius: 20px;
+  background: var(--purple);
+  color: white;
+  cursor: pointer;
+}
+
+.go-button:disabled {
+  background: #cfc7ef;
+  color: #8b81b8;
+  cursor: not-allowed;
+}
+
+.go-button:not(:disabled):active {
+  background: var(--purple-dark);
+}
+
+/* ============ Sheets (emoji picker + parent) ============ */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 12, 50, 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 50;
+}
+
+.sheet {
+  background: white;
+  width: 100%;
+  border-radius: 24px 24px 0 0;
+  padding: 18px 18px max(18px, env(safe-area-inset-bottom));
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.emoji-search {
+  flex: 1;
+  font-size: 1.1rem;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 2px solid var(--purple);
+}
+
+.sheet-close {
+  background: var(--bg);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+.picker-emoji {
+  font-size: 1.8rem;
+  background: var(--bg);
+  border: none;
+  border-radius: 14px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.picker-emoji:active {
+  background: var(--yellow);
+}
+
+.parent-sheet-content {
+  gap: 12px;
+}
+
+.parent-action {
+  padding: 18px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.parent-action-done {
+  background: var(--purple);
+  color: white;
+}
+
+/* ============ Kid mode ============ */
+
+#kid-screen {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, #6c4ef5 0%, #4c33b0 100%);
+  overflow: hidden;
+}
+
+.box-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mystery-box {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  width: min(70vw, 340px);
+  height: min(70vw, 340px);
+  animation: idle-wobble 2.6s ease-in-out infinite;
+  transform-origin: 50% 85%;
+}
+
+.mystery-box.shaking {
+  animation: shake var(--shake-interval, 0.26s) ease-in-out infinite;
+}
+
+.mystery-box[hidden] {
+  display: none;
+}
+
+.box-shadow {
+  fill: rgba(0, 0, 0, 0.2);
+}
+
+.box-body {
+  fill: var(--purple);
+}
+
+.box-body-highlight {
+  fill: rgba(255, 255, 255, 0.15);
+}
+
+.box-lid {
+  fill: #7d5cf7;
+}
+
+.box-ribbon-v,
+.box-ribbon-h {
+  fill: var(--yellow);
+}
+
+.box-bow,
+.box-bow-knot {
+  fill: var(--yellow);
+}
+
+@keyframes idle-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@keyframes shake {
+  0% { transform: rotate(0deg) scale(var(--shake-scale, 1)); }
+  25% { transform: rotate(-6deg) scale(var(--shake-scale, 1)); }
+  50% { transform: rotate(0deg) scale(var(--shake-scale, 1)); }
+  75% { transform: rotate(6deg) scale(var(--shake-scale, 1)); }
+  100% { transform: rotate(0deg) scale(var(--shake-scale, 1)); }
+}
+
+.reveal-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: pop-in 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.reveal-screen[hidden] {
+  display: none;
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.confetti-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.reveal-emoji {
+  font-size: 40vh;
+  line-height: 1;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
+}
+
+.reveal-label {
+  margin-top: 12px;
+  font-size: 2rem;
+  font-weight: 800;
+  color: white;
+  text-align: center;
+  padding: 0 24px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.parent-dot {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  padding: 0;
+  z-index: 10;
+}
