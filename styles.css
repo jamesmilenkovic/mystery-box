@@ -72,6 +72,13 @@ button {
   border-radius: 999px;
   padding: 6px 10px 6px 6px;
   font-size: 1.1rem;
+  /* Without this, iOS Safari can interpret a long-press inside the
+     scrollable setup screen as the start of a pan/scroll gesture and fire
+     pointercancel before the arm hold-timer (see attachChipHold in
+     app.js) completes — the chip itself has no scroll/zoom behaviour of
+     its own to preserve. */
+  touch-action: none;
+  -webkit-touch-callout: none;
 }
 
 /* Force-mode armed indicator: a hairline, low-contrast dot in the chip's
