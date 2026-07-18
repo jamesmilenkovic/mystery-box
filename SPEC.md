@@ -1,104 +1,120 @@
-# Increment 1 — Core loop (type options → box → reveal)
+# Increment 2 (combined) — Offline PWA + Force mode + Emoji coverage
 
-**Project:** Mystery Box · **Phase 1, slice 1 of 4**
-**PRD:** `PRDs/2-in-progress/2026-07-17-mystery-box.md`
-**Status:** Build-ready (scoped 2026-07-17)
+**Project:** Mystery Box · **Phase 1, slice 2** (merges former inc 2 +
+inc 2.5 + a live-testing emoji fix — James's call, 2026-07-18)
+**PRD:** `PRDs/2-in-progress/2026-07-17-mystery-box.md` (principle 5 as
+revised 2026-07-18 binds workstream B)
+**Base:** `main` @ `b65dee8`
+**Status:** Build-ready (scoped 2026-07-18)
 
-## Goal
+Three independent workstreams, one loop pass. A and B don't touch the same
+files; C touches emoji-match only. Success = all three acceptance blocks
+pass in one iPhone session.
 
-Prove the magic end-to-end: parent types 2–6 options in ~10 s, each gets a
-big emoji automatically, kid presses the mystery box, suspense builds, box
-bursts open, winner revealed like a prize. **Success = a real family decision
-(breakfast / ice cream flavours) made on James's iPhone this week, and the
-kid accepts the outcome.**
+---
 
-No photos, no presets, no PWA/offline yet. Just entry → box → reveal, on a
-URL the phone can open.
+## Workstream A — PWA + full offline
 
-## Stack (fixed for the project)
+Core promise: works anywhere with zero network, installed like a real app.
 
-1. **Static single-page vanilla HTML/JS/CSS** (house style — same as
-   metronome/drum-trainer). No framework, no build step; ES modules fine.
-   Prefer zero npm runtime dependencies — hand-rolled canvas confetti over a
-   library unless the loop argues otherwise.
-2. **No backend, no secrets — public GitHub repo + GitHub Pages** from this
-   increment, so the app is on a real HTTPS URL James's iPhone can open at
-   breakfast. (PWA install/offline is increment 4; a URL is enough for now.)
-3. **Phone-first:** iPhone Safari is the acceptance device; must also be
-   usable on an iPad. Portrait-first layout, big touch targets.
+1. **Manifest + icons:** `manifest.webmanifest` (standalone, portrait,
+   theme colours, relative `start_url` — Pages subpath), icons 192/512 +
+   maskable **+ `apple-touch-icon` 180×180** (iOS takes the home-screen icon
+   from the link tag), iOS standalone meta tags.
+2. **Service worker, hand-rolled (~50 lines, no Workbox):** precache the
+   entire shell (html, all modules, css, both emoji JSONs, any assets);
+   cache-first everything (zero dynamic requests exist); versioned cache
+   name bumped per deploy; activate-cleanup; `skipWaiting`+`clients.claim`
+   (silent updates); relative registration, feature-detected.
+3. **Precache-completeness unit test:** parse index.html + module graph,
+   fail if any referenced asset is missing from the list.
+4. README notes: home-screen apps exempt from Safari 7-day eviction;
+   deploy = bump cache version.
 
-## Build
+**Acceptance A (James, iPhone):** Add to Home Screen → airplane mode → full
+decision end-to-end with sound → force-quit + relaunch, still works. Then
+verify a later deploy actually updates (no stale-forever cache).
 
-### 1. Emoji auto-match (`src/emoji-match.js`, pure module, unit-tested)
+## Workstream B — Force mode (secret, parent-gated)
 
-- Vendored keyword→emoji dataset (derive once from emojilib or similar into a
-  static JSON asset committed to the repo — no runtime fetch, no dependency).
-- Curated **AU/kid alias overlay** (own JSON, checked first): avo toast, avo,
-  milo, vegemite, weet-bix, babyccino, booster seat, duplo, paw patrol,
-  bluey (→ 🐕), yoto, playground, scooter, ice cream flavours (mango 🥭,
-  choc/chocolate 🍫, strawberry 🍓, vanilla 🍦, cookies and cream 🍪)… seed
-  ~80–120 entries, easy to extend.
-- Match order: alias exact → dataset exact → singularised ("eggs"→"egg") →
-  word-boundary/substring → miss (❓ placeholder that invites tap-to-fix).
-- **Tap-to-fix picker:** tapping any option's emoji opens a sheet with a
-  search field over the same data + suggestion grid; picking replaces the
-  emoji. Parent-facing, so text UI is fine here.
+Per revised principle 5. One-shot covert force:
 
-### 2. Setup screen (parent, target <15 s)
+1. **Arm in setup:** long-press an option chip ~1.5 s toggles it armed; max
+   one armed (arming another disarms the first); edit/remove disarms.
+   Parent-subtle indicator only (hairline/faint corner dot — nothing a kid
+   can point at). No regression to tap-to-fix / ✕ / Clear all.
+2. **Forced spin:** winner substitution only — suspense/reveal path
+   untouched, pixel- and timing-identical. Auto-clears the moment the
+   reveal fires; next spin genuinely random.
+3. **Guardrails (binding):** force state memory-only — never in the
+   localStorage payload, never in future presets; `src/random.js` untouched
+   on the unforced path; no probability weighting anywhere; no history of
+   forced spins.
 
-- One text input: type an option, comma or return commits it as a chip (big
-  emoji + label). Tap chip's emoji to fix; tap ✕ to remove. 2–6 options
-  enforced (GO disabled outside that).
-- Sound toggle (default on) persisted to localStorage.
-- Current box persisted to localStorage (survive an accidental refresh —
-  this is NOT the presets feature; one slot, no naming, no list).
-- Big **GO** → kid mode.
+**Acceptance B (James):** arm one-handed in ~2 s; indicator invisible at kid
+distance; forced vs real spin side-by-side indistinguishable; next spin
+random.
 
-### 3. Kid mode + the reveal (the product)
+## Workstream C — Emoji coverage (live-testing gaps: "mum", "red", "blue" → ❓)
 
-- Full-screen: closed mystery box (drawn/SVG — original art, nothing
-  Netflix), gentle idle wobble that invites the tap. Nothing else tappable.
-- Kid taps box → **suspense sequence ~2–3 s**: shake with rising intensity,
-  rattle ticks, slight grow → burst open: winner's emoji huge (~40vh), label
-  under it, confetti burst, ta-da sound. Sequence is tap-triggered
-  end-to-end (iOS audio unlock rides the same gesture — see Testing).
-- Result stays on screen until a parent acts. **One spin per decision:** the
-  box cannot be re-run from kid mode.
-- **Grown-up gate:** small dim dot in a top corner; press-and-hold ~1.5 s
-  opens the parent sheet: Re-spin (full fresh reset — kid never sees a
-  visible re-roll, per PRD open Q1 leaning), Edit options, Done. Accidental
-  kid taps on the dot do nothing.
+1. **Index emoji names, not just keywords:** the vendored dataset maps
+   keywords only, so 🔴 ("red_circle") never matches "red". Split names on
+   `_`, add name words to the index (likely fixes all colours generically).
+2. **Alias overlay expansion, ~105 → ~300 curated entries.** Must include:
+   - **Family/people:** mum/mummy/mama 👩, dad/daddy 👨, nanna/nan/grandma
+     👵, grandpa/pop/poppy 👴, brother 👦, sister 👧, baby 👶, friend 🧒
+   - **Colours:** red 🔴, blue 🔵, green 🟢, yellow 🟡, purple 🟣, orange
+     🟠, pink 🩷, black ⚫, white ⚪, brown 🟤 (word-only, e.g. "red" — a
+     phrase like "red car" should still prefer 🚗-family matches)
+   - **Car/seats:** front seat, back seat, window seat, middle 💺/🚗;
+     left ⬅️, right ➡️
+   - **Places/activities:** park, playground, beach, pool, library, movies,
+     bike, scooter, swim, drawing, lego, books, trampoline…
+   - Numbers 1–10 (1️⃣…🔟) and anything else sensible found while curating.
+3. **Letter-tile fallback replaces ❓ entirely:** any residual miss renders
+   a big coloured circle tile with the option's first letter — colour
+   deterministic from the label (stable across sessions), high-contrast
+   palette, so every option is always visually distinct for a pre-reader.
+   Tap-to-fix picker unchanged on top.
 
-### 4. Randomness
+**Acceptance C (James):** type "mum, red, blue" → three real visuals, zero
+❓ anywhere in the app; a nonsense word gets a coloured letter tile.
 
-- Uniform pick via `crypto.getRandomValues` with proper rejection sampling
-  (no modulo bias). No weighting of any kind — the honest box is a product
-  rule, not a nice-to-have.
+---
 
-### 5. Audio + haptics
+## Out of scope
 
-- Web Audio, synthesized (oscillator/noise) or tiny bundled assets: rattle
-  ticks during suspense, ta-da + pop on reveal. All initiated from the kid's
-  tap. Respect the mute toggle. `navigator.vibrate` on reveal where
-  supported (Android/desktop — iOS Safari doesn't expose it; degrade
-  silently).
+Photos/camera (inc 3), presets (inc 4), AI images, weighting of any kind,
+multi-spin force, kid-mode force UI, Workbox, update prompts.
 
-## Out of scope (this increment)
+## Testing (all `node --test`, inc-1 suites stay green)
 
-Photos/camera (inc 2), saved presets (inc 3), PWA/service worker/offline +
-home-screen install (inc 4), AI images, weighting, theatre packs, multi-kid
-theming, remove-an-option-before-spin.
+- A: precache-completeness (see above).
+- B: forced-win 100% over many trials; auto-clear→uniform (loose bound);
+  arm/disarm/re-arm; single-armed invariant; localStorage payload clean.
+- C: name-word indexing ("red"→🔴, "blue"→🔵); alias set spot-checks (mum,
+  nanna, front seat, left); phrase-vs-colour precedence ("red car" ≠ 🔴);
+  letter-tile determinism (same label → same colour) + uniqueness of
+  first-letter rendering; ❓ no longer reachable.
 
-## Testing
+---
 
-- Unit tests (`node --test`): emoji-match (alias hit, exact, plural,
-  substring, miss → ❓; AU aliases incl. "avo toast", "milo"); option-entry
-  parsing (commas, returns, trims, dupes, 2–6 bounds); random picker
-  (rejection sampling correctness; loose uniformity check over 10k draws,
-  e.g. each of 3 options within 28–39%).
-- Manual acceptance (James, on iPhone Safari via the Pages URL):
-  1. Type "eggs, avo on toast, cereal" → three correct emoji, under 15 s.
-  2. Kid mode: suspense feels exciting not slow; **sound plays from the
-     kid's tap on iOS** (PRD open Q3 — verify explicitly).
-  3. One-spin rule: no way back to a spin without the long-press.
-  4. The real gate: run one genuine decision with one of the boys.
+## Appendix — PRD principle 5, verbatim (revised 2026-07-18, binding on workstream B)
+
+> **5. Honest box by default, with a parent trump card in the drawer.**
+> *(Revised 2026-07-18 — James's call after live use: "sometimes I need to
+> FORCE an outcome.")* Unforced spins are genuinely uniform random — no
+> probability weighting, ever. But a parent can secretly arm a **one-shot
+> force** before handing over: the box plays the normal reveal and lands on
+> the chosen option. Non-negotiable guardrails: armed by an explicit hidden
+> parent gesture only, indistinguishable reveal (identical timing/animation
+> — no tell), auto-clears after one spin, never saved into presets. Known
+> accepted risk: if the boys ever catch on, box authority is spent — use
+> sparingly.
+
+This is a binding contract, not a suggestion: no probability weighting
+anywhere in the codebase, ever (forced or unforced); force state is
+memory-only and must never appear in the localStorage payload or any future
+preset; `src/random.js` stays untouched on the unforced path; the reveal
+path (timing, animation, DOM structure) must be pixel- and
+timing-identical whether the win was forced or genuinely random.

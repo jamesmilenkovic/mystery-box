@@ -63,6 +63,7 @@ button {
 }
 
 .chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -71,6 +72,21 @@ button {
   border-radius: 999px;
   padding: 6px 10px 6px 6px;
   font-size: 1.1rem;
+}
+
+/* Force-mode armed indicator: a hairline, low-contrast dot in the chip's
+   corner. Deliberately subtle — a parent glancing at their own setup
+   screen can spot it, but it's not something that reads as a UI element
+   a kid would notice or ask about. */
+.chip-armed::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(43, 33, 69, 0.28);
 }
 
 .chip-emoji {
@@ -85,6 +101,27 @@ button {
 
 .chip-emoji:active {
   background: var(--bg);
+}
+
+/* Letter-tile fallback (replaces ❓ everywhere): a deterministically
+   coloured circle with the option's first letter, so a total emoji-match
+   miss still reads as a distinct, real-looking option for a pre-reader. */
+.chip-emoji.is-tile {
+  background: var(--tile-color, var(--purple));
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 800;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.chip-emoji.is-tile:active {
+  background: var(--tile-color, var(--purple));
+  opacity: 0.85;
 }
 
 .chip-label {
@@ -372,6 +409,23 @@ button {
 .reveal-emoji {
   font-size: 40vh;
   line-height: 1;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
+}
+
+/* Letter-tile fallback on the reveal screen: a big coloured circle with
+   the option's first letter, matching the scale a real emoji would fill
+   here so a miss doesn't look like a lesser result. */
+.reveal-emoji.is-tile {
+  width: min(60vw, 34vh);
+  height: min(60vw, 34vh);
+  border-radius: 50%;
+  background: var(--tile-color, var(--purple));
+  color: white;
+  font-size: min(30vw, 17vh);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
 }
 

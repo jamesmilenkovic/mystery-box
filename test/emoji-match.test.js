@@ -138,3 +138,129 @@ describe('emoji-match: miss', () => {
     assert.equal(match('   '), MISS_EMOJI);
   });
 });
+
+// ---------------------------------------------------------------------
+// Increment 2, workstream C: colour/direction word coverage, the
+// phrase-vs-colour precedence guardrail, curated alias spot-checks, and
+// the new name-word index tier.
+// ---------------------------------------------------------------------
+
+describe('emoji-match: colour and direction word coverage (name-word indexing)', () => {
+  test('bare colour words resolve to their swatch, not a dataset lookalike', () => {
+    assert.equal(match('red'), '🔴');
+    assert.equal(match('blue'), '🔵');
+    assert.equal(match('green'), '🟢');
+    assert.equal(match('yellow'), '🟡');
+    assert.equal(match('purple'), '🟣');
+    assert.equal(match('pink'), '🩷');
+    assert.equal(match('black'), '⚫');
+    assert.equal(match('white'), '⚪');
+    assert.equal(match('brown'), '🟤');
+    // "orange" was deliberately left as the fruit (🍊) during initial
+    // curation since it already had a sensible alias from increment 1 —
+    // James's explicit call was to override it with the colour swatch to
+    // match SPEC.md's alias list literally (2026-07-18).
+    assert.equal(match('orange'), '🟠');
+  });
+
+  test('phrase-vs-colour precedence: "red car" prefers a car-family match, not the swatch', () => {
+    // The vendored dataset maps bare "red"/"blue" to unrelated face
+    // emoji, and the alias overlay's colour words are deliberately
+    // exempted from the fallback tier for exactly this reason — a real
+    // phrase should never lose to a colour word buried inside it.
+    assert.notEqual(match('red car'), '🔴');
+    assert.notEqual(match('red car'), MISS_EMOJI);
+  });
+
+  test('phrase-vs-colour precedence: "orange juice"/"orange car" prefer their real match, not the swatch', () => {
+    // Same guardrail as "red car" above, exercised for "orange" now that
+    // it resolves to the colour swatch instead of the fruit at the exact
+    // tier — without the fallback exemption, these phrases would regress
+    // to the plain colour circle.
+    assert.notEqual(match('orange juice'), '🟠');
+    assert.notEqual(match('orange car'), '🟠');
+  });
+
+  test('left/right resolve to direction arrows, same precedence guardrail applies', () => {
+    assert.equal(match('left'), '⬅️');
+    assert.equal(match('right'), '➡️');
+  });
+});
+
+describe('emoji-match: alias overlay spot-checks (spec categories)', () => {
+  test('family/people', () => {
+    assert.equal(match('mum'), '👩');
+    assert.equal(match('mummy'), '👩');
+    assert.equal(match('dad'), '👨');
+    assert.equal(match('nanna'), '👵');
+    assert.equal(match('nan'), '👵');
+    assert.equal(match('grandpa'), '👴');
+    assert.equal(match('brother'), '👦');
+    assert.equal(match('sister'), '👧');
+    assert.equal(match('baby'), '👶');
+    assert.equal(match('friend'), '🧒');
+  });
+
+  test('car/seats', () => {
+    assert.equal(match('front seat'), '🚗');
+    assert.equal(match('back seat'), '🚗');
+    assert.equal(match('window seat'), '💺');
+    assert.equal(match('car'), '🚗');
+  });
+
+  test('numbers 1-10', () => {
+    assert.equal(match('1'), '1️⃣');
+    assert.equal(match('10'), '🔟');
+    assert.equal(match('seven'), '7️⃣');
+  });
+
+  test('places/activities', () => {
+    assert.equal(match('soccer'), '⚽');
+    assert.equal(match('cricket'), '🏏');
+    assert.equal(match('drawing'), '🎨');
+  });
+});
+
+describe('emoji-match: name-word index (single-word query matches a word inside a multi-word name)', () => {
+  test('matches a word that only appears as one word of a longer dataset name', () => {
+    const miniDataset = { 'party popper': '🎉' };
+    // Not reachable via the existing whole-key or boundary-partial-match
+    // fallback tiers: "party popper" isn't a substring of "popper", and
+    // "popper" only covers 6/13 = 46% of "party popper" — below the
+    // partial-match ratio threshold. Only the name-word index closes this.
+    assert.equal(matchEmoji('popper', {}, miniDataset), '🎉');
+  });
+
+  test('matches a middle word, not just a prefix/suffix of the name', () => {
+    const miniDataset = { 'red velvet cake': '🍰' };
+    assert.equal(matchEmoji('velvet', {}, miniDataset), '🍰');
+  });
+
+  test('only ever applies to single-word queries — a multi-word query does not fall back to it', () => {
+    const miniDataset = { 'red velvet cake': '🍰' };
+    // "velvet" alone would resolve via the name-word index (see the test
+    // above), but as soon as the query is a phrase, that tier must stay
+    // out of it entirely — same precedence principle as the colour-word
+    // exemption, generalised to any single indexed word.
+    assert.equal(matchEmoji('some velvet cake please', {}, miniDataset), MISS_EMOJI);
+  });
+
+  test('among multiple names containing the same word, prefers the fewest-words name', () => {
+    const miniDataset = {
+      'gold star medal': '🥇', // 3 words
+      'star medal': '🏅', // 2 words — more directly "about" the query word
+    };
+    assert.equal(matchEmoji('medal', {}, miniDataset), '🏅');
+  });
+
+  test('checks the alias overlay before the dataset, same priority as every other tier', () => {
+    const miniAliases = { 'shooting star': '🌠' };
+    const miniDataset = { 'lucky star': '⭐' };
+    assert.equal(matchEmoji('star', miniAliases, miniDataset), '🌠');
+  });
+
+  test('common stopwords (e.g. "with") are not indexed and never produce a match on their own', () => {
+    const miniDataset = { 'bowl with spoon': '🥣' };
+    assert.equal(matchEmoji('with', {}, miniDataset), MISS_EMOJI);
+  });
+});
