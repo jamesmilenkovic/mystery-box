@@ -19,6 +19,18 @@ export function getAudioContext() {
   if (!sharedContext) {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     sharedContext = new AudioContextClass();
+    // iOS Safari (16.4+) otherwise routes Web Audio through the "ambient"
+    // session category, which the hardware mute switch silences outright
+    // — everything else can be wired correctly and still produce no sound.
+    // Opting into "playback" (the same category music/game apps use) makes
+    // it audible with the switch on. Feature-detected; a no-op elsewhere.
+    if (navigator.audioSession) {
+      try {
+        navigator.audioSession.type = 'playback';
+      } catch {
+        // best-effort — never let this block audio from working otherwise
+      }
+    }
   }
   if (sharedContext.state === 'suspended') {
     sharedContext.resume();

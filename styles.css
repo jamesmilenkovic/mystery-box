@@ -52,7 +52,7 @@ button {
 #setup-screen {
   height: 100dvh;
   overflow: hidden;
-  padding: max(24px, env(safe-area-inset-top)) 20px 24px;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(32px, calc(env(safe-area-inset-bottom) + 16px));
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -270,19 +270,6 @@ button {
   font-size: 0.95rem;
   color: var(--purple-dark);
   text-align: center;
-}
-
-.sound-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 1.05rem;
-  align-self: center;
-}
-
-.sound-toggle input {
-  width: 22px;
-  height: 22px;
 }
 
 .go-button {

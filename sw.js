@@ -5,7 +5,7 @@
 //
 // Deploy = bump CACHE_NAME. That's what forces old clients to fetch a
 // fresh shell instead of running on a stale cache forever.
-const CACHE_NAME = 'mystery-box-v2';
+const CACHE_NAME = 'mystery-box-v3';
 
 // Every path here is relative (no leading "/") since this app is served
 // from a GitHub Pages project subpath, not domain root.

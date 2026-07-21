@@ -14,7 +14,6 @@ import { createIndexedDbBackend } from './indexeddb-backend.js';
 import { processPhotoFile } from './photo-capture.js';
 
 const BOX_STORAGE_KEY = 'mysterybox:box';
-const SOUND_STORAGE_KEY = 'mysterybox:sound';
 
 const SUSPENSE_DURATION_MS = 2400;
 const TICK_START_MS = 260;
@@ -32,7 +31,6 @@ const photoButton = document.getElementById('photo-button');
 const photoCaptureInput = document.getElementById('photo-capture-input');
 const photoLibraryInput = document.getElementById('photo-library-input');
 const countHint = document.getElementById('count-hint');
-const soundToggle = document.getElementById('sound-toggle');
 const goButton = document.getElementById('go-button');
 const clearButton = document.getElementById('clear-button');
 
@@ -72,7 +70,6 @@ let aliases = {};
 let dataset = {};
 let chips = []; // [{label, emoji, photoId}] — the box being edited on the setup screen
 let currentOptions = []; // the frozen list kid mode is spinning over
-let soundOn = true;
 let pickerIndex = -1;
 let photoSheetIndex = -1; // which chip index the open photo sheet is acting on, or -1
 let photoReplaceIndex = -1; // which chip's photo is being replaced by the next file pick, or -1 for "new chip"
@@ -187,23 +184,6 @@ function persistBox() {
   } catch {
     // storage unavailable (e.g. private browsing quota) — fail silently,
     // in-memory state still works for this session
-  }
-}
-
-function loadSoundSetting() {
-  try {
-    const v = localStorage.getItem(SOUND_STORAGE_KEY);
-    return v === null ? true : v === 'on';
-  } catch {
-    return true;
-  }
-}
-
-function persistSoundSetting() {
-  try {
-    localStorage.setItem(SOUND_STORAGE_KEY, soundOn ? 'on' : 'off');
-  } catch {
-    // ignore
   }
 }
 
@@ -418,13 +398,22 @@ async function onPhotoFileChosen(e) {
   e.target.value = ''; // allow re-selecting the same file next time
   if (!file) return;
 
-  const blob = await processPhotoFile(file);
-  if (photoReplaceIndex >= 0) {
-    await replaceChipPhoto(photoReplaceIndex, blob);
-  } else {
-    await addPhotoChip(blob);
+  // A decode/encode failure here (rare — e.g. a transient hiccup on the
+  // very first capture of a session) must not leave photoReplaceIndex
+  // stuck or throw an unhandled rejection out of this event handler; the
+  // parent just sees nothing happen and taps 📷 again.
+  try {
+    const blob = await processPhotoFile(file);
+    if (photoReplaceIndex >= 0) {
+      await replaceChipPhoto(photoReplaceIndex, blob);
+    } else {
+      await addPhotoChip(blob);
+    }
+  } catch (err) {
+    console.error('Photo capture failed:', err);
+  } finally {
+    photoReplaceIndex = -1;
   }
-  photoReplaceIndex = -1;
 }
 
 photoButton.addEventListener('click', openPhotoCaptureForNewChip);
@@ -461,11 +450,6 @@ optionInput.addEventListener('keydown', (e) => {
 addButton.addEventListener('click', () => commitInput({ all: true }));
 
 clearButton.addEventListener('click', clearChips);
-
-soundToggle.addEventListener('change', () => {
-  soundOn = soundToggle.checked;
-  persistSoundSetting();
-});
 
 goButton.addEventListener('click', async () => {
   if (!isValidOptionCount(chips.length)) return;
@@ -616,7 +600,7 @@ function runSuspense(ctx, winnerIndex) {
     mysteryBox.style.setProperty('--shake-interval', `${interval}ms`);
     mysteryBox.style.setProperty('--shake-scale', scale.toFixed(3));
 
-    if (soundOn) playTick(ctx);
+    playTick(ctx);
 
     setTimeout(tick, interval);
   }
@@ -636,10 +620,8 @@ function reveal(ctx, winnerIndex) {
   revealScreen.hidden = false;
 
   burstConfetti(confettiCanvas);
-  if (soundOn) {
-    playPop(ctx);
-    setTimeout(() => playTada(ctx), 150);
-  }
+  playPop(ctx);
+  setTimeout(() => playTada(ctx), 150);
   vibrate([60, 40, 60, 40, 120]);
 
   spinning = false;
@@ -760,8 +742,6 @@ async function init() {
   await loadEmojiData();
 
   chips = loadBox();
-  soundOn = loadSoundSetting();
-  soundToggle.checked = soundOn;
 
   renderChips();
   setupKeyboardViewportFix();
