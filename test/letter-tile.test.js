@@ -66,3 +66,28 @@ describe('letter-tile: resolveVisual — ❓ is unreachable in rendering', () =>
     assert.equal(result.letter, tileLetter('Excavator'));
   });
 });
+
+describe('letter-tile: resolveVisual — photo precedence (increment 3)', () => {
+  test('a photo URL wins over a real emoji match', () => {
+    const result = resolveVisual('🍞', 'toast', 'blob:http://example/abc');
+    assert.deepEqual(result, { kind: 'photo', url: 'blob:http://example/abc' });
+  });
+
+  test('a photo URL wins over a MISS_EMOJI/letter-tile fallback too', () => {
+    const result = resolveVisual(MISS_EMOJI, 'qwfpzxcvzz', 'blob:http://example/def');
+    assert.deepEqual(result, { kind: 'photo', url: 'blob:http://example/def' });
+  });
+
+  test('omitting photoUrl falls through to emoji behaviour unchanged (back-compat)', () => {
+    assert.deepEqual(resolveVisual('🍞', 'toast'), { kind: 'emoji', value: '🍞' });
+  });
+
+  test('a null photoUrl (photo not yet loaded / removed) falls through to the tile', () => {
+    const result = resolveVisual(MISS_EMOJI, 'qwfpzxcvzz', null);
+    assert.equal(result.kind, 'tile');
+  });
+
+  test('an empty-string photoUrl is treated as "no photo", not a real value', () => {
+    assert.deepEqual(resolveVisual('🍞', 'toast', ''), { kind: 'emoji', value: '🍞' });
+  });
+});

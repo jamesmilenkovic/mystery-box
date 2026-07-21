@@ -58,15 +58,16 @@ export function resolveWinnerIndex(armedIndex, randomWinnerIndex) {
 
 /**
  * Builds the exact object persisted to localStorage for the current box.
- * Deliberately narrow — only ever includes {label, emoji} per option —
- * so memory-only force state can never leak into storage even if a
- * caller accidentally passes a chip object carrying extra properties.
+ * Deliberately narrow — only ever includes {label, emoji, photoId} per
+ * option (increment 3 extends the whitelist by exactly photoId) — so
+ * memory-only force state can never leak into storage even if a caller
+ * accidentally passes a chip object carrying extra properties.
  *
- * @param {{label: string, emoji: string}[]} chips
- * @returns {{options: {label: string, emoji: string}[]}}
+ * @param {{label: string, emoji: string, photoId?: string|null}[]} chips
+ * @returns {{options: {label: string, emoji: string, photoId: string|null}[]}}
  */
 export function serializeBoxForStorage(chips) {
   return {
-    options: chips.map(({ label, emoji }) => ({ label, emoji })),
+    options: chips.map(({ label, emoji, photoId }) => ({ label, emoji, photoId: photoId ?? null })),
   };
 }

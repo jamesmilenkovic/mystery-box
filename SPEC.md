@@ -1,120 +1,124 @@
-# Increment 2 (combined) — Offline PWA + Force mode + Emoji coverage
+# Increment 3 — Photo options (snap the actual things)
 
-**Project:** Mystery Box · **Phase 1, slice 2** (merges former inc 2 +
-inc 2.5 + a live-testing emoji fix — James's call, 2026-07-18)
-**PRD:** `PRDs/2-in-progress/2026-07-17-mystery-box.md` (principle 5 as
-revised 2026-07-18 binds workstream B)
-**Base:** `main` @ `b65dee8`
+**Project:** Mystery Box · **Phase 1, slice 3**
+**PRD:** `PRDs/2-in-progress/2026-07-17-mystery-box.md`
+**Base:** `main` @ `789afc7` (inc-2 combined + iOS Safari long-press fix).
+Repo-status 2026-07-18 shows `789afc7` local, **ahead 1 of origin** — push
+before starting so Pages and origin match the base.
 **Status:** Build-ready (scoped 2026-07-18)
 
-Three independent workstreams, one loop pass. A and B don't touch the same
-files; C touches emoji-match only. Success = all three acceptance blocks
-pass in one iPhone session.
+## Goal
+
+The canonical day-one case: three ice-cream tubs, one stalled kid. Skip
+typing — **snap a photo per option**. Real objects in front of you are
+faster to photograph than to name, and the camera is the one rich-image
+source that works with zero network. Photo and emoji options mix freely in
+one box; the reveal shows the actual thing, full-bleed.
+
+Three workstreams, one loop pass. A is the risk surface (camera +
+IndexedDB); B is rendering; C is the setup-screen layout fix the PRD
+explicitly queued for this increment ("fix the layout approach once rather
+than twice" — photo thumbnails make the occlusion worse).
 
 ---
 
-## Workstream A — PWA + full offline
+## Workstream A — Capture + storage
 
-Core promise: works anywhere with zero network, installed like a real app.
+1. **Capture:** 📷 button in the entry row → `<input type="file"
+   accept="image/*" capture="environment">` (native iOS camera sheet;
+   photo library reachable from the same control). No `getUserMedia`, no
+   custom camera UI, no new permissions surface.
+2. **Processing:** downscale to ≤1280 px long edge, JPEG ~0.8 quality,
+   target ≲300 KB/photo. Respect EXIF orientation — `createImageBitmap`
+   with `imageOrientation: 'from-image'` where supported, documented
+   fallback where not. Pure geometry/decision logic in its own module so
+   it's unit-testable.
+3. **Storage:** new pure module `src/photo-store.js` — IndexedDB, single
+   object store, `photoId → blob`. **Backend injected** so unit tests run
+   against a hand-rolled in-memory stub (zero-npm-deps rule holds; no
+   fake-indexeddb). localStorage keeps everything else, per inc-2's
+   "don't foreclose IndexedDB" note.
+4. **Option shape:** chip gains nullable `photoId`.
+   `serializeBoxForStorage` whitelist extends `{label, emoji}` →
+   `{label, emoji, photoId}` — one deliberate change; force/armed state
+   stays structurally excluded (test against the real chip shape).
+5. **Garbage collection:** removing a chip, Clear all, or replacing a
+   photo deletes its blob; a startup sweep removes blobs unreferenced by
+   the persisted box. Revoke object URLs when chips/reveals go away.
+6. **Labels optional on photo chips** — the photo carries the meaning
+   (pre-reader rule); a typed label is allowed and shown small.
 
-1. **Manifest + icons:** `manifest.webmanifest` (standalone, portrait,
-   theme colours, relative `start_url` — Pages subpath), icons 192/512 +
-   maskable **+ `apple-touch-icon` 180×180** (iOS takes the home-screen icon
-   from the link tag), iOS standalone meta tags.
-2. **Service worker, hand-rolled (~50 lines, no Workbox):** precache the
-   entire shell (html, all modules, css, both emoji JSONs, any assets);
-   cache-first everything (zero dynamic requests exist); versioned cache
-   name bumped per deploy; activate-cleanup; `skipWaiting`+`clients.claim`
-   (silent updates); relative registration, feature-detected.
-3. **Precache-completeness unit test:** parse index.html + module graph,
-   fail if any referenced asset is missing from the list.
-4. README notes: home-screen apps exempt from Safari 7-day eviction;
-   deploy = bump cache version.
+## Workstream B — Setup + reveal rendering
 
-**Acceptance A (James, iPhone):** Add to Home Screen → airplane mode → full
-decision end-to-end with sound → force-quit + relaunch, still works. Then
-verify a later deploy actually updates (no stale-forever cache).
+1. **Photo chips:** thumbnail sits where the emoji sits. Tap thumbnail →
+   small sheet: Retake / Choose from library / Remove photo (chip falls
+   back to emoji/letter-tile from its label). ✕-remove and **long-press
+   force-arm work identically on photo chips** (object-identity arming
+   already survives; `789afc7`'s iOS long-press fix applies).
+2. **Reveal:** extend the `resolveVisual()` choke point — photo →
+   **full-bleed cover-fit image** (same confetti/ta-da), emoji → as now
+   (~40vh), miss → letter tile. Suspense/reveal functions still take only
+   an int — the forced/unforced structural identity from inc 2 must not
+   be disturbed.
+3. **Mixed boxes:** photo and text/emoji options freely mixed, 2–6 rule
+   unchanged.
+4. **While in this code:** bring letter-tile reveal size in line with the
+   emoji reveal (inc-2 cosmetic watch-item — same code area, close it).
 
-## Workstream B — Force mode (secret, parent-gated)
+## Workstream C — Setup-screen layout fix (pulled from the PRD's queued UX pass)
 
-Per revised principle 5. One-shot covert force:
-
-1. **Arm in setup:** long-press an option chip ~1.5 s toggles it armed; max
-   one armed (arming another disarms the first); edit/remove disarms.
-   Parent-subtle indicator only (hairline/faint corner dot — nothing a kid
-   can point at). No regression to tap-to-fix / ✕ / Clear all.
-2. **Forced spin:** winner substitution only — suspense/reveal path
-   untouched, pixel- and timing-identical. Auto-clears the moment the
-   reveal fires; next spin genuinely random.
-3. **Guardrails (binding):** force state memory-only — never in the
-   localStorage payload, never in future presets; `src/random.js` untouched
-   on the unforced path; no probability weighting anywhere; no history of
-   forced spins.
-
-**Acceptance B (James):** arm one-handed in ~2 s; indicator invisible at kid
-distance; forced vs real spin side-by-side indistinguishable; next spin
-random.
-
-## Workstream C — Emoji coverage (live-testing gaps: "mum", "red", "blue" → ❓)
-
-1. **Index emoji names, not just keywords:** the vendored dataset maps
-   keywords only, so 🔴 ("red_circle") never matches "red". Split names on
-   `_`, add name words to the index (likely fixes all colours generically).
-2. **Alias overlay expansion, ~105 → ~300 curated entries.** Must include:
-   - **Family/people:** mum/mummy/mama 👩, dad/daddy 👨, nanna/nan/grandma
-     👵, grandpa/pop/poppy 👴, brother 👦, sister 👧, baby 👶, friend 🧒
-   - **Colours:** red 🔴, blue 🔵, green 🟢, yellow 🟡, purple 🟣, orange
-     🟠, pink 🩷, black ⚫, white ⚪, brown 🟤 (word-only, e.g. "red" — a
-     phrase like "red car" should still prefer 🚗-family matches)
-   - **Car/seats:** front seat, back seat, window seat, middle 💺/🚗;
-     left ⬅️, right ➡️
-   - **Places/activities:** park, playground, beach, pool, library, movies,
-     bike, scooter, swim, drawing, lego, books, trampoline…
-   - Numbers 1–10 (1️⃣…🔟) and anything else sensible found while curating.
-3. **Letter-tile fallback replaces ❓ entirely:** any residual miss renders
-   a big coloured circle tile with the option's first letter — colour
-   deterministic from the label (stable across sessions), high-contrast
-   palette, so every option is always visually distinct for a pre-reader.
-   Tap-to-fix picker unchanged on top.
-
-**Acceptance C (James):** type "mum, red, blue" → three real visuals, zero
-❓ anywhere in the app; a nonsense word gets a coloured letter tile.
+1. **Keyboard occlusion (root cause already confirmed — see PRD "Future
+   ideas", 2026-07-18):** GO is pinned to the bottom of a `100dvh` flex
+   column via `margin-top: auto`, and iOS Safari's keyboard doesn't
+   reflow the layout viewport — so GO ends up under the keyboard.
+   Restructure: chip list becomes the scrollable region
+   (`overflow-y: auto`), entry row + GO stay reachable with the keyboard
+   up (sticky entry row and/or `visualViewport` handling — coder's call).
+   Note the PRD's caveat: headless Chrome cannot reproduce a real iOS
+   keyboard; James verifies on device.
+2. **Explicit "Add" button** next to the text field — additive (comma/
+   Return stays). Pulled in because the entry row is being reworked for
+   📷 anyway. One-handed mobile entry is the point.
 
 ---
+
+## Offline note (no SW changes expected)
+
+Photos live in IndexedDB and render via object URLs — never fetched — so
+`sw.js` and the precache list should be untouched apart from the
+mandatory `CACHE_NAME` bump on deploy. Precache-completeness test stays
+green with zero photo entries. README addition: home-screen install
+exempts IndexedDB from Safari's 7-day eviction (same clause as the cache
+note).
 
 ## Out of scope
 
-Photos/camera (inc 3), presets (inc 4), AI images, weighting of any kind,
-multi-spin force, kid-mode force UI, Workbox, update prompts.
+Presets (inc 4), first-run parent hint (inc 4), AI images (inc 5), photo
+cropping/editing/filters, multi-photo per option, "closed for now" state
+(still queued, unscoped), any change to random/force semantics, Workbox.
 
-## Testing (all `node --test`, inc-1 suites stay green)
+## Testing (all `node --test`; inc-1/2 suites stay green — 113 incl. the 1 documented todo)
 
-- A: precache-completeness (see above).
-- B: forced-win 100% over many trials; auto-clear→uniform (loose bound);
-  arm/disarm/re-arm; single-armed invariant; localStorage payload clean.
-- C: name-word indexing ("red"→🔴, "blue"→🔵); alias set spot-checks (mum,
-  nanna, front seat, left); phrase-vs-colour precedence ("red car" ≠ 🔴);
-  letter-tile determinism (same label → same colour) + uniqueness of
-  first-letter rendering; ❓ no longer reachable.
+- **A:** photo-store CRUD + GC + startup sweep against the injected stub;
+  downscale/orientation decision logic; serializer round-trip with
+  `photoId` on the real chip shape, force state still unleakable.
+- **B:** `resolveVisual` precedence photo → emoji → letter tile; ❓ still
+  unreachable; letter-tile/emoji size parity (style-level assertion or
+  documented manual check).
+- **C:** entry via Add button === entry via comma/Return (same commit
+  path, same dedupe/bounds).
 
----
+## Acceptance (James, iPhone — one session; also covers the still-pending inc-1/2 phone acceptance if not yet done)
 
-## Appendix — PRD principle 5, verbatim (revised 2026-07-18, binding on workstream B)
-
-> **5. Honest box by default, with a parent trump card in the drawer.**
-> *(Revised 2026-07-18 — James's call after live use: "sometimes I need to
-> FORCE an outcome.")* Unforced spins are genuinely uniform random — no
-> probability weighting, ever. But a parent can secretly arm a **one-shot
-> force** before handing over: the box plays the normal reveal and lands on
-> the chosen option. Non-negotiable guardrails: armed by an explicit hidden
-> parent gesture only, indistinguishable reveal (identical timing/animation
-> — no tell), auto-clears after one spin, never saved into presets. Known
-> accepted risk: if the boys ever catch on, box authority is spent — use
-> sparingly.
-
-This is a binding contract, not a suggestion: no probability weighting
-anywhere in the codebase, ever (forced or unforced); force state is
-memory-only and must never appear in the localStorage payload or any future
-preset; `src/random.js` stays untouched on the unforced path; the reveal
-path (timing, animation, DOM structure) must be pixel- and
-timing-identical whether the win was forced or genuinely random.
+1. **Ice-cream test:** 3 photo options snapped into a box in well under a
+   minute — faster than naming them. Typed boxes still ~15 s.
+2. **Airplane mode:** full photo decision end-to-end offline; force-quit
+   + relaunch → photos still there.
+3. **Mixed box** (2 photos + 1 typed): both render correctly in setup and
+   reveal.
+4. **Force:** long-press arm a *photo* chip; forced reveal
+   indistinguishable; auto-clears.
+5. **Keyboard:** with the entry field focused and keyboard up, Add and GO
+   both reachable without dismissing the keyboard.
+6. Nonsense typed word → letter tile, now the same size as an emoji
+   reveal.

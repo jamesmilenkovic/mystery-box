@@ -40,8 +40,18 @@ button {
 
 /* ============ Setup screen ============ */
 
+/* Fixed (not min-) height: the chip list below is the only scrolling
+   region, so the entry row and GO stay put in the remaining space rather
+   than being pushed off-screen as the box grows. Increment 3, workstream
+   C1: iOS Safari's keyboard doesn't reflow the layout viewport, so if this
+   whole screen were free to grow past one viewport tall, GO could end up
+   under the keyboard with no way to scroll to it. app.js additionally
+   sets this element's inline height from window.visualViewport (where
+   supported) so the box shrinks to the visible area, not just the layout
+   viewport, whenever the keyboard is up. */
 #setup-screen {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   padding: max(24px, env(safe-area-inset-top)) 20px 24px;
   display: flex;
   flex-direction: column;
@@ -55,11 +65,19 @@ button {
   margin: 8px 0 0;
 }
 
+/* The scrollable region (workstream C1) — everything else in #setup-screen
+   keeps a fixed size, so this is the only part that grows/shrinks and
+   scrolls as chips are added. min-height:0 is required for a flex child
+   to be allowed to shrink below its content size and actually scroll
+   instead of overflowing its flex parent. */
 .chip-list {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 10px;
   min-height: 48px;
+  flex: 1 1 auto;
+  overflow-y: auto;
 }
 
 .chip {
@@ -131,6 +149,31 @@ button {
   opacity: 0.85;
 }
 
+/* Photo chip thumbnail (increment 3, workstream B1): sits where the
+   emoji/tile sits, same footprint as .is-tile above so a mixed box of
+   photo and emoji/text chips lines up evenly. */
+.chip-emoji.is-photo {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+}
+
+.chip-emoji.is-photo:active {
+  opacity: 0.85;
+}
+
+/* Typed labels on photo chips are optional and, per SPEC.md workstream
+   A6, shown small — the photo carries the meaning, the label is a minor
+   assist. */
+.chip-label-photo {
+  font-size: 0.85rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
 .chip-label {
   font-weight: 600;
   max-width: 40vw;
@@ -166,7 +209,33 @@ button {
   opacity: 0.6;
 }
 
+/* Entry row (workstream C2): 📷 capture, the text field, and an explicit
+   Add button sit side by side. Part of the fixed (non-scrolling) bottom
+   of the setup screen, so it — and GO below it — stay reachable with the
+   iOS keyboard up. */
+.entry-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.photo-button {
+  flex: 0 0 auto;
+  font-size: 1.4rem;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 2px solid var(--purple);
+  background: white;
+  cursor: pointer;
+}
+
+.photo-button:active {
+  background: var(--bg);
+}
+
 .option-input {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 1.2rem;
   padding: 14px 16px;
   border-radius: 14px;
@@ -177,6 +246,22 @@ button {
 
 .option-input:focus {
   outline: 3px solid var(--yellow);
+}
+
+.add-button {
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: none;
+  background: var(--purple);
+  color: white;
+  cursor: pointer;
+}
+
+.add-button:active {
+  background: var(--purple-dark);
 }
 
 .count-hint {
@@ -201,7 +286,9 @@ button {
 }
 
 .go-button {
-  margin-top: auto;
+  /* No longer needs margin-top: auto to reach the bottom — .chip-list is
+     now the flex-grow element that absorbs remaining space (workstream
+     C1), so GO simply sits after it in normal flow. */
   padding: 20px;
   font-size: 1.6rem;
   font-weight: 800;
@@ -290,7 +377,8 @@ button {
   background: var(--yellow);
 }
 
-.parent-sheet-content {
+.parent-sheet-content,
+.photo-sheet-content {
   gap: 12px;
 }
 
@@ -421,18 +509,33 @@ button {
 
 /* Letter-tile fallback on the reveal screen: a big coloured circle with
    the option's first letter, matching the scale a real emoji would fill
-   here so a miss doesn't look like a lesser result. */
+   here so a miss doesn't look like a lesser result. Sized off the same
+   40vh basis as .reveal-emoji's font-size (increment 3, workstream B4 —
+   was min(60vw, 34vh), visibly smaller than the emoji; closes the inc-2
+   cosmetic watch-item). */
 .reveal-emoji.is-tile {
-  width: min(60vw, 34vh);
-  height: min(60vw, 34vh);
+  width: min(70vw, 40vh);
+  height: min(70vw, 40vh);
   border-radius: 50%;
   background: var(--tile-color, var(--purple));
   color: white;
-  font-size: min(30vw, 17vh);
+  font-size: min(35vw, 20vh);
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
+}
+
+/* Full-bleed cover-fit photo reveal (increment 3, workstream B2): photo
+   options always win the reveal over emoji/tile — see resolveVisual()'s
+   extended precedence in src/letter-tile.js. */
+.reveal-emoji.is-photo {
+  width: min(85vw, 480px);
+  height: 42vh;
+  border-radius: 28px;
+  background-size: cover;
+  background-position: center;
   filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
 }
 

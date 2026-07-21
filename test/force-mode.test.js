@@ -106,7 +106,7 @@ describe('force-mode: resolveWinnerIndex — auto-clear -> genuinely random (loo
 });
 
 describe('force-mode: localStorage payload stays clean of force state', () => {
-  test('only label/emoji are ever included, even for a chip carrying extra properties', () => {
+  test('only label/emoji/photoId are ever included, even for a chip carrying extra properties', () => {
     const chips = [
       { label: 'eggs', emoji: '🥚', armed: true, someOtherField: 'x' },
       { label: 'cereal', emoji: '🥣' },
@@ -114,8 +114,8 @@ describe('force-mode: localStorage payload stays clean of force state', () => {
     const payload = serializeBoxForStorage(chips);
     assert.deepEqual(payload, {
       options: [
-        { label: 'eggs', emoji: '🥚' },
-        { label: 'cereal', emoji: '🥣' },
+        { label: 'eggs', emoji: '🥚', photoId: null },
+        { label: 'cereal', emoji: '🥣', photoId: null },
       ],
     });
     assert.ok(!JSON.stringify(payload).includes('armed'), 'no "armed" field may ever reach the serialized payload');
@@ -123,5 +123,31 @@ describe('force-mode: localStorage payload stays clean of force state', () => {
 
   test('an empty box serializes to an empty options array', () => {
     assert.deepEqual(serializeBoxForStorage([]), { options: [] });
+  });
+
+  // Increment 3 (SPEC.md workstream A4): the whitelist grows by exactly
+  // one field, photoId — round-tripped here on the real chip shape
+  // app.js actually produces, with force state (armed) still excluded.
+  test('a real photoId round-trips through the payload', () => {
+    const chips = [{ label: 'ice cream', emoji: '❓', photoId: 'photo_abc123' }];
+    assert.deepEqual(serializeBoxForStorage(chips), {
+      options: [{ label: 'ice cream', emoji: '❓', photoId: 'photo_abc123' }],
+    });
+  });
+
+  test('a chip with no photo serializes photoId as null, not undefined/missing', () => {
+    const chips = [{ label: 'toast', emoji: '🍞' }];
+    const payload = serializeBoxForStorage(chips);
+    assert.equal(payload.options[0].photoId, null);
+    assert.ok('photoId' in payload.options[0]);
+  });
+
+  test('force/armed state stays structurally excluded even on a photo chip', () => {
+    const chips = [{ label: '', emoji: '❓', photoId: 'photo_xyz', armed: true }];
+    const payload = serializeBoxForStorage(chips);
+    assert.deepEqual(payload, {
+      options: [{ label: '', emoji: '❓', photoId: 'photo_xyz' }],
+    });
+    assert.ok(!JSON.stringify(payload).includes('armed'), 'no "armed" field may ever reach the serialized payload, photo chip or not');
   });
 });

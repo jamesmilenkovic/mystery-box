@@ -28,16 +28,28 @@
 
   <button id="clear-button" class="clear-button" type="button" hidden>Clear all</button>
 
-  <input
-    id="option-input"
-    type="text"
-    inputmode="text"
-    autocomplete="off"
-    autocorrect="off"
-    autocapitalize="off"
-    placeholder="Type an option, then comma or Enter&hellip;"
-    class="option-input"
-  />
+  <div class="entry-row">
+    <button id="photo-button" class="photo-button" type="button" aria-label="Add a photo option">📷</button>
+    <input
+      id="option-input"
+      type="text"
+      inputmode="text"
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      placeholder="Type an option&hellip;"
+      class="option-input"
+    />
+    <button id="add-button" class="add-button" type="button" aria-label="Add option">Add</button>
+  </div>
+
+  <!-- Hidden file inputs behind the entry row's 📷 button and the photo
+       sheet's Retake/Choose actions. Two inputs (not one) so Retake can
+       hint the camera directly while Choose from library hints the
+       library — both still let iOS show its full picker sheet either way,
+       per SPEC.md workstream A1. -->
+  <input id="photo-capture-input" type="file" accept="image/*" capture="environment" hidden />
+  <input id="photo-library-input" type="file" accept="image/*" hidden />
 
   <p id="count-hint" class="count-hint"></p>
 
@@ -66,6 +78,16 @@
       <button id="emoji-picker-close" class="sheet-close" type="button" aria-label="Close">&times;</button>
     </div>
     <div id="emoji-suggestion-grid" class="emoji-grid"></div>
+  </div>
+</div>
+
+<!-- ============ TAP-TO-OPEN PHOTO SHEET ============ -->
+<div id="photo-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet photo-sheet-content" role="dialog" aria-modal="true" aria-label="Photo options">
+    <button id="photo-retake" class="parent-action" type="button">Retake photo</button>
+    <button id="photo-choose" class="parent-action" type="button">Choose from library</button>
+    <button id="photo-remove" class="parent-action" type="button">Remove photo</button>
+    <button id="photo-sheet-close" class="parent-action" type="button">Cancel</button>
   </div>
 </div>
 

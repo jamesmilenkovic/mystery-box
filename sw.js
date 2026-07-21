@@ -5,7 +5,7 @@
 //
 // Deploy = bump CACHE_NAME. That's what forces old clients to fetch a
 // fresh shell instead of running on a stale cache forever.
-const CACHE_NAME = 'mystery-box-v1';
+const CACHE_NAME = 'mystery-box-v2';
 
 // Every path here is relative (no leading "/") since this app is served
 // from a GitHub Pages project subpath, not domain root.
@@ -22,8 +22,12 @@ const PRECACHE_URLS = [
   "src/confetti.js",
   "src/emoji-match.js",
   "src/force-mode.js",
+  "src/indexeddb-backend.js",
   "src/letter-tile.js",
   "src/option-entry.js",
+  "src/photo-capture.js",
+  "src/photo-processing.js",
+  "src/photo-store.js",
   "src/random.js",
   "assets/emoji-aliases.json",
   "assets/emoji-dataset.json",

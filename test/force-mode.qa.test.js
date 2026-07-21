@@ -14,18 +14,19 @@ import assert from 'node:assert/strict';
 import { toggleArm, disarmIfMatches, resolveWinnerIndex, serializeBoxForStorage } from '../src/force-mode.js';
 
 // Chips are built exactly the way app.js's addOptionsFromText() builds
-// them — {label, emoji} only, never carrying an "armed" field. armedChip
-// in app.js is a *separate* reference variable, not a property on the
-// chip. These tests deliberately mirror that shape rather than the
+// them — {label, emoji, photoId} only, never carrying an "armed" field.
+// armedChip in app.js is a *separate* reference variable, not a property
+// on the chip. These tests deliberately mirror that shape rather than the
 // coder's synthetic "chip carrying extra properties" fixture, to prove
 // the real production data flow (not just the serializer's defensiveness)
-// never leaks force state.
+// never leaks force state. (photoId: null added in increment 3, workstream
+// A4's whitelist extension — see SPEC.md.)
 
 function freshChips() {
   return [
-    { label: 'eggs', emoji: '🥚' },
-    { label: 'cereal', emoji: '🥣' },
-    { label: 'toast', emoji: '🍞' },
+    { label: 'eggs', emoji: '🥚', photoId: null },
+    { label: 'cereal', emoji: '🥣', photoId: null },
+    { label: 'toast', emoji: '🍞', photoId: null },
   ];
 }
 
@@ -56,7 +57,7 @@ describe('force-mode QA: realistic session — armed, then persisted (page reloa
     const payload = serializeBoxForStorage(chips);
     const keySets = payload.options.map((o) => Object.keys(o).sort().join(','));
     assert.equal(new Set(keySets).size, 1, `expected every serialized option to share the same key set, got: ${keySets}`);
-    assert.deepEqual(keySets[0].split(','), ['emoji', 'label']);
+    assert.deepEqual(keySets[0].split(','), ['emoji', 'label', 'photoId']);
   });
 });
 
@@ -73,7 +74,7 @@ describe('force-mode QA: realistic session — armed, then the armed chip is edi
 
     assert.equal(armedChip, null, 'editing the armed chip must disarm it');
     const payload = serializeBoxForStorage(chips);
-    assert.deepEqual(payload.options[0], { label: 'eggs', emoji: '🍳' });
+    assert.deepEqual(payload.options[0], { label: 'eggs', emoji: '🍳', photoId: null });
     assert.ok(!JSON.stringify(payload).toLowerCase().includes('arm'));
   });
 

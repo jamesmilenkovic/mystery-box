@@ -32,4 +32,8 @@ node --test "test/**/*.test.js"
   normally clears a site's cache/storage after 7 days of no visits, but
   that only applies to sites opened in the browser — once "Added to Home
   Screen", the app runs in its own standalone context and isn't subject
-  to that eviction policy.
+  to that eviction policy. The same exemption covers IndexedDB (where
+  photo options are stored), not just the service worker cache.
+- **Photos never touch the network or the precache.** They live in
+  IndexedDB and render via `URL.createObjectURL()` object URLs, so adding
+  photo options doesn't change what `sw.js` needs to precache.
