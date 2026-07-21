@@ -12,16 +12,42 @@ import { toggleArm, disarmIfMatches, resolveWinnerIndex, serializeBoxForStorage 
 import { createPhotoStore } from './photo-store.js';
 import { createIndexedDbBackend } from './indexeddb-backend.js';
 import { processPhotoFile } from './photo-capture.js';
+import { createPhotoUrlResolver } from './photo-url-resolver.js';
+import {
+  buildPreset,
+  serializePresetsForStorage,
+  canAddPreset,
+  addPreset,
+  removePreset,
+  renamePreset,
+  updatePresetIcon,
+  referencedPhotoIds,
+  orphanedPhotoIdsOnDelete,
+} from './presets.js';
+import { parseClosedState, serializeClosedState, canSpin } from './closed-state.js';
 
 const BOX_STORAGE_KEY = 'mysterybox:box';
+const PRESETS_STORAGE_KEY = 'mysterybox:presets';
+const CLOSED_STORAGE_KEY = 'mysterybox:closed';
+const GROWNUPS_HINT_SEEN_KEY = 'mysterybox:grownups-hint-seen';
 
 const SUSPENSE_DURATION_MS = 2400;
 const TICK_START_MS = 260;
 const TICK_END_MS = 90;
 const HOLD_TO_OPEN_MS = 1500;
 const CHIP_ARM_HOLD_MS = 1500;
+const PHOTO_TOAST_DURATION_MS = 2200;
 
 // ---------- DOM refs ----------
+
+const presetScreen = document.getElementById('preset-screen');
+const presetList = document.getElementById('preset-list');
+const presetNewButton = document.getElementById('preset-new-button');
+const presetGrownupsButton = document.getElementById('preset-grownups-button');
+
+const managePresetsSheet = document.getElementById('manage-presets-sheet');
+const managePresetsList = document.getElementById('manage-presets-list');
+const managePresetsDone = document.getElementById('manage-presets-done');
 
 const setupScreen = document.getElementById('setup-screen');
 const chipList = document.getElementById('chip-list');
@@ -33,6 +59,8 @@ const photoLibraryInput = document.getElementById('photo-library-input');
 const countHint = document.getElementById('count-hint');
 const goButton = document.getElementById('go-button');
 const clearButton = document.getElementById('clear-button');
+const saveBoxButton = document.getElementById('save-box-button');
+const photoToast = document.getElementById('photo-toast');
 
 const pickerSheet = document.getElementById('emoji-picker-sheet');
 const pickerSearch = document.getElementById('emoji-search');
@@ -45,17 +73,29 @@ const photoChoose = document.getElementById('photo-choose');
 const photoRemove = document.getElementById('photo-remove');
 const photoSheetClose = document.getElementById('photo-sheet-close');
 
+const savePresetSheet = document.getElementById('save-preset-sheet');
+const presetIconButton = document.getElementById('preset-icon-button');
+const presetNameInput = document.getElementById('preset-name-input');
+const presetCapHint = document.getElementById('preset-cap-hint');
+const presetSaveButton = document.getElementById('preset-save-button');
+const presetSaveCancel = document.getElementById('preset-save-cancel');
+
 const kidScreen = document.getElementById('kid-screen');
 const mysteryBox = document.getElementById('mystery-box');
+const boxClosedEl = document.getElementById('box-closed');
 const revealScreen = document.getElementById('reveal-screen');
 const revealEmoji = document.getElementById('reveal-emoji');
 const revealLabel = document.getElementById('reveal-label');
+const revealSaveButton = document.getElementById('reveal-save-button');
 const confettiCanvas = document.getElementById('confetti-canvas');
-const parentDot = document.getElementById('parent-dot');
+const grownupsButton = document.getElementById('grownups-button');
+const grownupsHint = document.getElementById('grownups-hint');
+const grownupsHintClose = document.getElementById('grownups-hint-close');
 
 const parentSheet = document.getElementById('parent-sheet');
 const parentRespin = document.getElementById('parent-respin');
-const parentEdit = document.getElementById('parent-edit');
+const parentNewBox = document.getElementById('parent-newbox');
+const parentToggleClosed = document.getElementById('parent-toggle-closed');
 const parentDone = document.getElementById('parent-done');
 
 // Real IndexedDB-backed photo storage — src/photo-store.js's CRUD/GC logic
@@ -70,82 +110,38 @@ let aliases = {};
 let dataset = {};
 let chips = []; // [{label, emoji, photoId}] — the box being edited on the setup screen
 let currentOptions = []; // the frozen list kid mode is spinning over
-let pickerIndex = -1;
+let presets = []; // [{id, name, icon, options: [{label, emoji, photoId}]}] — saved boxes
+let pickerContext = null; // { type: 'chip', index } | { type: 'preset-draft' } | { type: 'preset-icon', presetId }
+let presetSaveSourceChips = []; // the chip list "Keep this box?" is currently offering to save
+let presetDraftIcon = ''; // live-matched (or tap-to-fix overridden) icon for the save sheet
+let presetIconManuallySet = false; // true once the parent tap-to-fixes the draft icon
 let photoSheetIndex = -1; // which chip index the open photo sheet is acting on, or -1
 let photoReplaceIndex = -1; // which chip's photo is being replaced by the next file pick, or -1 for "new chip"
 let spinning = false;
 let spun = false;
+let boxClosed = false; // "Closed for now" parent toggle (SPEC.md workstream B3) — manual only, persisted
 
-// In-memory cache of photoId -> object URL, so a chip's photo blob is only
-// read out of IndexedDB and turned into a URL once per session. Also the
-// single place object URLs are revoked from (SPEC.md workstream A5) —
-// every removal path below goes through revokePhotoUrl() before deleting
-// the underlying blob.
-const photoUrlCache = new Map();
-
-// In-flight ensurePhotoUrl() reads, keyed by photoId. renderChips() has
-// ~10 call sites and an IndexedDB read isn't instant, so it's routine for
-// preloadChipPhoto() to re-enter for the same still-loading photoId before
-// the first read resolves. Without this, each re-entry would start its own
-// photoStore.get() + createObjectURL(), and the last one to finish would
-// silently overwrite photoUrlCache's entry — orphaning every earlier
-// object URL with nothing left to revoke it. Concurrent callers now share
-// the one in-flight request instead.
-const pendingPhotoUrls = new Map();
-
-function revokePhotoUrl(photoId) {
-  const url = photoUrlCache.get(photoId);
-  if (url) {
-    URL.revokeObjectURL(url);
-    photoUrlCache.delete(photoId);
-  }
-  // A read already in flight for this photoId must not be allowed to
-  // resurrect a URL after the photo's been deleted/replaced out from under
-  // it. Dropping the pending entry here means ensurePhotoUrl's continuation
-  // (below) sees it's been superseded once the read resolves, and abandons
-  // the result instead of caching a URL for a photoId nothing references
-  // any more.
-  pendingPhotoUrls.delete(photoId);
-}
-
-// Resolves (from cache, or by reading the blob out of IndexedDB) the
-// object URL for a chip's photo. Safe to call repeatedly — already-cached
-// photoIds resolve immediately without touching the store again, and
-// concurrent calls for the same not-yet-cached photoId share one read.
-async function ensurePhotoUrl(photoId) {
-  if (!photoId) return null;
-  if (photoUrlCache.has(photoId)) return photoUrlCache.get(photoId);
-  const pending = pendingPhotoUrls.get(photoId);
-  if (pending) return pending;
-
-  const request = photoStore.get(photoId).then(
-    (blob) => {
-      // Superseded by a revokePhotoUrl() (photo deleted/replaced) while
-      // this read was in flight — don't touch the resolved cache.
-      if (pendingPhotoUrls.get(photoId) !== request) return null;
-      pendingPhotoUrls.delete(photoId);
-      if (!blob) return null;
-      const url = URL.createObjectURL(blob);
-      photoUrlCache.set(photoId, url);
-      return url;
-    },
-    (err) => {
-      // Don't leave a failed read permanently camped in the pending map —
-      // let a later call retry instead of reusing this rejection forever.
-      if (pendingPhotoUrls.get(photoId) === request) pendingPhotoUrls.delete(photoId);
-      throw err;
-    },
-  );
-  pendingPhotoUrls.set(photoId, request);
-  return request;
-}
+// Object-URL cache + in-flight-read dedup for chip photos, bound to the
+// real photoStore + browser URL.createObjectURL/revokeObjectURL. The
+// underlying logic lives in src/photo-url-resolver.js so it can be unit
+// tested against a stub backend (SPEC.md increment 4, workstream C1/C3) —
+// this is just the real wiring. Every photo-blob removal path funnels
+// through photoUrlResolver.revoke() (called from deleteChipPhoto() below)
+// before the underlying blob is deleted.
+const photoUrlResolver = createPhotoUrlResolver({
+  photoStore,
+  createObjectURL: (blob) => URL.createObjectURL(blob),
+  revokeObjectURL: (url) => URL.revokeObjectURL(url),
+});
 
 // Fire-and-forget preload used by renderChips(): a chip whose photo isn't
 // cached yet renders its emoji/tile fallback immediately, then swaps in
-// the real thumbnail once the blob has loaded, via a re-render.
+// the real thumbnail once the blob has loaded, via a re-render. A failed
+// read resolves to null (never throws — see photo-url-resolver.js), so a
+// broken read just leaves the emoji/letter-tile fallback in place.
 function preloadChipPhoto(photoId) {
-  if (!photoId || photoUrlCache.has(photoId)) return;
-  ensurePhotoUrl(photoId).then((url) => {
+  if (!photoId || photoUrlResolver.getCached(photoId)) return;
+  photoUrlResolver.ensureUrl(photoId).then((url) => {
     if (url) renderChips();
   });
 }
@@ -187,6 +183,55 @@ function persistBox() {
   }
 }
 
+// Defensive parse mirroring loadBox() — a malformed/corrupt entry is
+// dropped rather than crashing the preset list; each surviving preset is
+// reshaped to the exact {id, name, icon, options: [{label, emoji,
+// photoId}]} the app relies on elsewhere (SPEC.md workstream A4).
+function loadPresets() {
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.options))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        icon: typeof p.icon === 'string' ? p.icon : '',
+        options: p.options
+          .filter((o) => o && typeof o.label === 'string' && typeof o.emoji === 'string')
+          .map((o) => ({ label: o.label, emoji: o.emoji, photoId: typeof o.photoId === 'string' ? o.photoId : null })),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function persistPresets() {
+  try {
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(serializePresetsForStorage(presets)));
+  } catch {
+    // storage unavailable — fail silently, same as persistBox()
+  }
+}
+
+function loadClosedState() {
+  try {
+    return parseClosedState(localStorage.getItem(CLOSED_STORAGE_KEY));
+  } catch {
+    return false;
+  }
+}
+
+function persistClosedState() {
+  try {
+    localStorage.setItem(CLOSED_STORAGE_KEY, serializeClosedState(boxClosed));
+  } catch {
+    // storage unavailable — fail silently, same as persistBox()
+  }
+}
+
 // ---------- Setup screen: chips ----------
 
 function renderChips() {
@@ -212,9 +257,9 @@ function renderChips() {
       preloadChipPhoto(chip.photoId);
     } else {
       emojiBtn.setAttribute('aria-label', `Fix emoji for ${labelForAria}`);
-      emojiBtn.addEventListener('click', () => openPicker(index));
+      emojiBtn.addEventListener('click', () => openPicker({ type: 'chip', index }));
     }
-    applyVisual(emojiBtn, resolveVisual(chip.emoji, chip.label, photoUrlCache.get(chip.photoId)));
+    applyVisual(emojiBtn, resolveVisual(chip.emoji, chip.label, photoUrlResolver.getCached(chip.photoId)));
 
     const labelEl = document.createElement('span');
     labelEl.className = 'chip-label';
@@ -239,6 +284,11 @@ function renderChips() {
   updateCountHint();
   updateGoButton();
   clearButton.hidden = chips.length === 0;
+  // "Keep this box?" is offered from setup too (SPEC.md workstream A1) —
+  // same enablement bound as GO, so there's always a valid box to save.
+  // Purely additive: GO itself is untouched, so ad-hoc use stays exactly
+  // as fast as before.
+  saveBoxButton.hidden = !isValidOptionCount(chips.length);
 }
 
 // Renders a resolveVisual() result (photo thumbnail, real emoji, or
@@ -319,12 +369,13 @@ function addOptionsFromText(text) {
 }
 
 // Deletes a chip's photo blob (if any) and revokes its cached object URL.
-// The single place all three GC triggers in SPEC.md workstream A5 —
-// removing a chip, Clear all, and replacing/removing a chip's photo —
-// funnel through, so a blob is never deleted from only one of them.
+// The single choke point every photo-blob-releasing path funnels through
+// — removing a chip, Clear all, replacing/removing a chip's photo
+// (SPEC.md workstream A5), and now also deleting a preset that was the
+// photo's last remaining reference (workstream A5 extended, increment 4).
 function deleteChipPhoto(photoId) {
   if (!photoId) return;
-  revokePhotoUrl(photoId);
+  photoUrlResolver.revoke(photoId);
   photoStore.remove(photoId).catch(() => {
     // best-effort GC — a failed delete just leaves an orphaned blob for
     // the next startup sweep to catch, it's not worth surfacing to the UI
@@ -393,6 +444,18 @@ async function removeChipPhoto(index) {
   persistBox();
 }
 
+// Minimal photo-decode-failure feedback (SPEC.md increment 4, workstream
+// C2) — a small toast on the capture control, auto-hiding itself. No
+// bigger error UI/component system.
+let photoToastTimer = null;
+function showPhotoToast() {
+  photoToast.hidden = false;
+  clearTimeout(photoToastTimer);
+  photoToastTimer = setTimeout(() => {
+    photoToast.hidden = true;
+  }, PHOTO_TOAST_DURATION_MS);
+}
+
 async function onPhotoFileChosen(e) {
   const file = e.target.files && e.target.files[0];
   e.target.value = ''; // allow re-selecting the same file next time
@@ -401,7 +464,9 @@ async function onPhotoFileChosen(e) {
   // A decode/encode failure here (rare — e.g. a transient hiccup on the
   // very first capture of a session) must not leave photoReplaceIndex
   // stuck or throw an unhandled rejection out of this event handler; the
-  // parent just sees nothing happen and taps 📷 again.
+  // parent just sees nothing happen and taps 📷 again — plus, since
+  // increment 4, a brief toast confirming what happened so it doesn't
+  // look like the tap did nothing at all.
   try {
     const blob = await processPhotoFile(file);
     if (photoReplaceIndex >= 0) {
@@ -411,6 +476,7 @@ async function onPhotoFileChosen(e) {
     }
   } catch (err) {
     console.error('Photo capture failed:', err);
+    showPhotoToast();
   } finally {
     photoReplaceIndex = -1;
   }
@@ -457,10 +523,79 @@ goButton.addEventListener('click', async () => {
   await enterKidMode();
 });
 
-// ---------- Tap-to-fix emoji picker ----------
+// ---------- "Keep this box?" — save the current box as a preset ----------
+//
+// Offered from the setup screen (Save box) and after any reveal (Keep
+// this box?) — SPEC.md workstream A1. Purely additive/optional: nothing
+// about GO or the reveal itself waits on this, so ad-hoc (not-saving) use
+// stays exactly as fast as before. Icon auto-matches from the typed name
+// via the same emoji pipeline as everywhere else, tap-to-fix like a chip.
 
-function openPicker(index) {
-  pickerIndex = index;
+function renderPresetIconButton() {
+  applyVisual(presetIconButton, resolveVisual(presetDraftIcon, presetNameInput.value));
+}
+
+function updatePresetSaveButtonState() {
+  const hasName = presetNameInput.value.trim().length > 0;
+  const roomForMore = canAddPreset(presets);
+  presetCapHint.hidden = roomForMore;
+  presetSaveButton.disabled = !hasName || !roomForMore;
+}
+
+function openSavePresetSheet(sourceChips) {
+  // Whitelisted to exactly the shape a preset stores — mirrors
+  // serializePresetOptions, and (same as that function) structurally
+  // cannot carry force/armed state since only label/emoji/photoId are
+  // ever read off each chip.
+  presetSaveSourceChips = sourceChips.map((c) => ({ label: c.label, emoji: c.emoji, photoId: c.photoId ?? null }));
+  presetNameInput.value = '';
+  presetIconManuallySet = false;
+  presetDraftIcon = matchEmoji('', aliases, dataset);
+  renderPresetIconButton();
+  updatePresetSaveButtonState();
+  savePresetSheet.hidden = false;
+  presetNameInput.focus();
+}
+
+function closeSavePresetSheet() {
+  savePresetSheet.hidden = true;
+}
+
+saveBoxButton.addEventListener('click', () => openSavePresetSheet(chips));
+revealSaveButton.addEventListener('click', () => openSavePresetSheet(currentOptions));
+
+presetNameInput.addEventListener('input', () => {
+  if (!presetIconManuallySet) {
+    presetDraftIcon = matchEmoji(presetNameInput.value.trim(), aliases, dataset);
+    renderPresetIconButton();
+  }
+  updatePresetSaveButtonState();
+});
+
+presetIconButton.addEventListener('click', () => openPicker({ type: 'preset-draft' }));
+
+presetSaveButton.addEventListener('click', () => {
+  const name = presetNameInput.value.trim().replace(/\s+/g, ' ');
+  if (!name || !canAddPreset(presets)) return;
+  const preset = buildPreset(name, presetDraftIcon, presetSaveSourceChips);
+  presets = addPreset(presets, preset);
+  persistPresets();
+  closeSavePresetSheet();
+});
+
+// Declining leaves nothing behind — nothing was written to `presets` or
+// localStorage until Save is tapped, so Cancel is a pure discard.
+presetSaveCancel.addEventListener('click', closeSavePresetSheet);
+
+// ---------- Tap-to-fix emoji picker ----------
+//
+// Shared by three call sites (SPEC.md increment 4 extends this beyond just
+// chips): fixing a setup-screen chip's emoji, picking a preset's icon
+// while saving it ("Keep this box?"), and changing an already-saved
+// preset's icon from the manage sheet. pickerContext records which.
+
+function openPicker(context) {
+  pickerContext = context;
   pickerSearch.value = '';
   renderPickerResults('');
   pickerSheet.hidden = false;
@@ -469,7 +604,7 @@ function openPicker(index) {
 
 function closePicker() {
   pickerSheet.hidden = true;
-  pickerIndex = -1;
+  pickerContext = null;
 }
 
 function renderPickerResults(query) {
@@ -482,17 +617,34 @@ function renderPickerResults(query) {
     btn.textContent = emoji;
     btn.setAttribute('aria-label', key);
     btn.addEventListener('click', () => {
-      if (pickerIndex >= 0 && chips[pickerIndex]) {
-        // Changing the emoji counts as editing this chip — disarms it if
-        // it was the armed one, per the spec's "edit/remove disarms" rule.
-        armedChip = disarmIfMatches(armedChip, chips[pickerIndex]);
-        chips[pickerIndex].emoji = emoji;
-        renderChips();
-        persistBox();
-      }
+      applyPickedEmoji(emoji);
       closePicker();
     });
     pickerGrid.appendChild(btn);
+  }
+}
+
+function applyPickedEmoji(emoji) {
+  const context = pickerContext;
+  if (!context) return;
+
+  if (context.type === 'chip') {
+    const chip = chips[context.index];
+    if (!chip) return;
+    // Changing the emoji counts as editing this chip — disarms it if it
+    // was the armed one, per the spec's "edit/remove disarms" rule.
+    armedChip = disarmIfMatches(armedChip, chip);
+    chip.emoji = emoji;
+    renderChips();
+    persistBox();
+  } else if (context.type === 'preset-draft') {
+    presetDraftIcon = emoji;
+    presetIconManuallySet = true;
+    renderPresetIconButton();
+  } else if (context.type === 'preset-icon') {
+    presets = updatePresetIcon(presets, context.presetId, emoji);
+    persistPresets();
+    renderManagePresetsList();
   }
 }
 
@@ -539,32 +691,40 @@ async function enterKidMode() {
   // Make sure every photo option's object URL is loaded before the kid
   // ever sees the box — the reveal must never be the first time a photo
   // is fetched from IndexedDB, or it could show a fallback tile for a
-  // frame (or longer) instead of the actual photo.
-  await Promise.all(chips.filter((c) => c.photoId).map((c) => ensurePhotoUrl(c.photoId)));
+  // frame (or longer) instead of the actual photo. A failed read resolves
+  // to null rather than rejecting (SPEC.md workstream C1), so this never
+  // throws — it just falls back to the emoji/letter-tile visual.
+  await Promise.all(chips.filter((c) => c.photoId).map((c) => photoUrlResolver.ensureUrl(c.photoId)));
 
   currentOptions = chips.map((c) => ({ ...c }));
   // Snapshot which index is armed for this spin, if any. chips and
   // currentOptions share the same order/length right now, so the index
   // carries over safely — armedChip itself stays untouched (still needed
-  // if the parent bails out to Edit before ever tapping the box).
+  // if the parent bails out to New box before ever tapping the box).
   forcedIndex = armedChip ? chips.indexOf(armedChip) : -1;
   spun = false;
   spinning = false;
   resetBoxVisual();
+  presetScreen.hidden = true;
   setupScreen.hidden = true;
   kidScreen.hidden = false;
+  maybeShowGrownupsHint();
 }
 
 function resetBoxVisual() {
   revealScreen.hidden = true;
-  mysteryBox.hidden = false;
+  // "Closed for now" (SPEC.md workstream B3): the sleeping box replaces
+  // mysteryBox entirely — no idle-wobble/invite animation, and the real
+  // box element is hidden so it can't be tapped at all.
+  boxClosedEl.hidden = !boxClosed;
+  mysteryBox.hidden = boxClosed;
   mysteryBox.classList.remove('shaking');
   mysteryBox.style.removeProperty('--shake-interval');
   mysteryBox.style.removeProperty('--shake-scale');
 }
 
 mysteryBox.addEventListener('click', () => {
-  if (spinning || spun) return;
+  if (!canSpin({ closed: boxClosed, spinning, spun })) return;
   spinning = true;
 
   // Must create/resume the AudioContext synchronously inside this real
@@ -613,9 +773,9 @@ function reveal(ctx, winnerIndex) {
 
   mysteryBox.classList.remove('shaking');
   mysteryBox.hidden = true;
-  // photoUrlCache is guaranteed populated here — enterKidMode() awaits
-  // every photo option's URL before the kid screen is ever shown.
-  applyVisual(revealEmoji, resolveVisual(winner.emoji, winner.label, photoUrlCache.get(winner.photoId)));
+  // The resolver's cache is guaranteed populated here — enterKidMode()
+  // awaits every photo option's URL before the kid screen is ever shown.
+  applyVisual(revealEmoji, resolveVisual(winner.emoji, winner.label, photoUrlResolver.getCached(winner.photoId)));
   revealLabel.textContent = winner.label;
   revealScreen.hidden = false;
 
@@ -636,34 +796,46 @@ function reveal(ctx, winnerIndex) {
 }
 
 // ---------- Parent gate ----------
+//
+// SPEC.md increment 4, workstream B1: the old invisible corner dot is
+// replaced by a small VISIBLE "grown-ups" button — kids can see it but
+// the same ~1.5s hold-to-open gate (unchanged timing) still keeps a quick
+// tap a no-op. Two buttons share this exact gesture (kid mode's
+// grownupsButton and the preset list's presetGrownupsButton), each
+// opening a different sheet, so the hold logic is factored out once here
+// rather than duplicated.
 
-let holdTimer = null;
-
-function cancelHold() {
-  if (holdTimer) {
-    clearTimeout(holdTimer);
-    holdTimer = null;
+function attachHoldGate(el, onOpen) {
+  let holdTimer = null;
+  function cancelHold() {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
   }
+  el.addEventListener('pointerdown', () => {
+    cancelHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      onOpen();
+    }, HOLD_TO_OPEN_MS);
+  });
+  el.addEventListener('pointerup', cancelHold);
+  el.addEventListener('pointercancel', cancelHold);
+  el.addEventListener('pointerleave', cancelHold);
 }
 
-parentDot.addEventListener('pointerdown', () => {
-  cancelHold();
-  holdTimer = setTimeout(() => {
-    holdTimer = null;
-    openParentSheet();
-  }, HOLD_TO_OPEN_MS);
-});
-parentDot.addEventListener('pointerup', cancelHold);
-parentDot.addEventListener('pointercancel', cancelHold);
-parentDot.addEventListener('pointerleave', cancelHold);
-
 function openParentSheet() {
+  dismissGrownupsHint(); // successfully finding + holding the button counts as "seen"
+  parentToggleClosed.textContent = boxClosed ? 'Open the box' : 'Close the box';
   parentSheet.hidden = false;
 }
 
 function closeParentSheet() {
   parentSheet.hidden = true;
 }
+
+attachHoldGate(grownupsButton, openParentSheet);
 
 parentRespin.addEventListener('click', () => {
   closeParentSheet();
@@ -675,16 +847,214 @@ parentRespin.addEventListener('click', () => {
   resetBoxVisual();
 });
 
-parentEdit.addEventListener('click', () => {
+// "New box" (SPEC.md workstream B1) — leaves kid mode for the same
+// launch flow app boot uses (preset list if any presets exist, else
+// setup). Deliberately does NOT clear `chips`: if there are no presets to
+// choose from instead, this lands back on the setup screen with the
+// current box still there to tweak, same as the old "Edit options" did.
+parentNewBox.addEventListener('click', () => {
   closeParentSheet();
   kidScreen.hidden = true;
-  setupScreen.hidden = false;
-  renderChips();
+  showLaunchScreen();
+});
+
+// "Close the box" / "Open the box" (SPEC.md workstream B3) — manual-only
+// toggle, persisted so it survives a relaunch. Full reset alongside the
+// toggle, same spirit as Spin again, so a box closed mid-suspense doesn't
+// leave a half-finished spin behind.
+parentToggleClosed.addEventListener('click', () => {
+  closeParentSheet();
+  boxClosed = !boxClosed;
+  persistClosedState();
+  spun = false;
+  spinning = false;
+  resetBoxVisual();
 });
 
 parentDone.addEventListener('click', () => {
   closeParentSheet();
 });
+
+// ---------- First-run hint ("Hold for grown-ups") ----------
+//
+// SPEC.md workstream B4: shown once ever, on the first-ever kid-mode
+// entry, then dismissed forever (persisted).
+
+function maybeShowGrownupsHint() {
+  let seen = false;
+  try {
+    seen = !!localStorage.getItem(GROWNUPS_HINT_SEEN_KEY);
+  } catch {
+    seen = false;
+  }
+  if (!seen) grownupsHint.hidden = false;
+}
+
+function dismissGrownupsHint() {
+  if (grownupsHint.hidden) return;
+  grownupsHint.hidden = true;
+  try {
+    localStorage.setItem(GROWNUPS_HINT_SEEN_KEY, '1');
+  } catch {
+    // storage unavailable — the hint just won't stay dismissed across a
+    // relaunch in that case, same soft-fail as the rest of storage here
+  }
+}
+
+grownupsHintClose.addEventListener('click', dismissGrownupsHint);
+
+// ---------- Preset list (saved boxes) ----------
+//
+// SPEC.md workstream A2/A3: the app's launch screen once any presets
+// exist, plus the manage sheet (rename/change icon/delete) behind its own
+// grown-ups hold gate.
+
+function renderPresetList() {
+  presetList.innerHTML = '';
+  for (const preset of presets) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'preset-card';
+
+    const iconEl = document.createElement('span');
+    iconEl.className = 'preset-card-icon';
+    applyVisual(iconEl, resolveVisual(preset.icon, preset.name));
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'preset-card-name';
+    nameEl.textContent = preset.name;
+
+    card.append(iconEl, nameEl);
+    card.addEventListener('click', () => enterPreset(preset));
+    presetList.appendChild(card);
+  }
+}
+
+// One tap on a preset -> straight into kid mode, ready to spin (SPEC.md
+// acceptance criterion 1).
+async function enterPreset(preset) {
+  chips = preset.options.map((o) => ({ ...o }));
+  armedChip = null; // presets never carry force state — explicit belt-and-braces reset
+  persistBox();
+  presetScreen.hidden = true;
+  await enterKidMode();
+}
+
+presetNewButton.addEventListener('click', () => {
+  chips = [];
+  armedChip = null;
+  persistBox();
+  presetScreen.hidden = true;
+  setupScreen.hidden = false;
+  renderChips();
+});
+
+function openManagePresetsSheet() {
+  renderManagePresetsList();
+  managePresetsSheet.hidden = false;
+}
+
+function closeManagePresetsSheet() {
+  managePresetsSheet.hidden = true;
+}
+
+attachHoldGate(presetGrownupsButton, openManagePresetsSheet);
+
+function renderManagePresetsList() {
+  managePresetsList.innerHTML = '';
+  if (presets.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'count-hint';
+    empty.textContent = 'No saved boxes yet.';
+    managePresetsList.appendChild(empty);
+    return;
+  }
+
+  for (const preset of presets) {
+    const row = document.createElement('div');
+    row.className = 'manage-preset-row';
+
+    const iconBtn = document.createElement('button');
+    iconBtn.type = 'button';
+    iconBtn.className = 'chip-emoji preset-icon-button';
+    iconBtn.setAttribute('aria-label', `Change icon for ${preset.name}`);
+    applyVisual(iconBtn, resolveVisual(preset.icon, preset.name));
+    iconBtn.addEventListener('click', () => openPicker({ type: 'preset-icon', presetId: preset.id }));
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'manage-preset-name';
+    nameEl.textContent = preset.name;
+
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'manage-preset-action';
+    renameBtn.textContent = 'Rename';
+    renameBtn.addEventListener('click', () => renamePresetPrompt(preset));
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'manage-preset-action manage-preset-delete';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', () => deletePresetConfirmed(preset));
+
+    row.append(iconBtn, nameEl, renameBtn, deleteBtn);
+    managePresetsList.appendChild(row);
+  }
+}
+
+function renamePresetPrompt(preset) {
+  const next = window.prompt('Rename this box', preset.name);
+  if (next === null) return; // cancelled
+  const trimmed = next.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return;
+  presets = renamePreset(presets, preset.id, trimmed);
+  persistPresets();
+  renderManagePresetsList();
+}
+
+// Deleting a preset releases any of its photos not still referenced by
+// the current box or another remaining preset, via the same
+// deleteChipPhoto() choke point every other photo removal path uses
+// (SPEC.md workstream A5).
+function deletePresetConfirmed(preset) {
+  if (!window.confirm(`Delete "${preset.name}"? This can't be undone.`)) return;
+  const remaining = removePreset(presets, preset.id);
+  const orphaned = orphanedPhotoIdsOnDelete(preset, chips, remaining);
+  for (const photoId of orphaned) deleteChipPhoto(photoId);
+  presets = remaining;
+  persistPresets();
+
+  if (presets.length === 0) {
+    // Nothing left to manage or launch into — fall back to setup rather
+    // than showing an empty preset list.
+    closeManagePresetsSheet();
+    presetScreen.hidden = true;
+    setupScreen.hidden = false;
+    renderChips();
+  } else {
+    renderManagePresetsList();
+    renderPresetList();
+  }
+}
+
+managePresetsDone.addEventListener('click', () => {
+  closeManagePresetsSheet();
+  renderPresetList();
+});
+
+// The app's launch flow (SPEC.md workstream A2): the preset list when any
+// presets exist (with a prominent New box path), otherwise straight to
+// setup as before. Reused by "New box" in the kid-mode parent sheet too.
+function showLaunchScreen() {
+  if (presets.length > 0) {
+    renderPresetList();
+    presetScreen.hidden = false;
+    setupScreen.hidden = true;
+  } else {
+    presetScreen.hidden = true;
+    setupScreen.hidden = false;
+  }
+}
 
 // ---------- Boot ----------
 
@@ -706,13 +1076,14 @@ function registerServiceWorker() {
   }
 }
 
-// Startup sweep (SPEC.md workstream A5): deletes any stored photo blob no
-// longer referenced by the persisted box — the safety net for anything
-// orphaned by a crash/force-quit between a blob write and the matching
-// localStorage write (the explicit deletes in removeChip/clearChips/
-// replaceChipPhoto/removeChipPhoto handle the normal-path cases).
+// Startup sweep (SPEC.md workstream A5, extended in increment 4): deletes
+// any stored photo blob no longer referenced by EITHER the persisted
+// current box OR any saved preset — the safety net for anything orphaned
+// by a crash/force-quit between a blob write and the matching localStorage
+// write (the explicit deletes in removeChip/clearChips/replaceChipPhoto/
+// removeChipPhoto/deletePresetConfirmed handle the normal-path cases).
 async function sweepOrphanedPhotos() {
-  const referencedIds = chips.filter((c) => c.photoId).map((c) => c.photoId);
+  const referencedIds = [...chips.filter((c) => c.photoId).map((c) => c.photoId), ...referencedPhotoIds(presets)];
   try {
     await photoStore.gc(referencedIds);
   } catch {
@@ -742,8 +1113,11 @@ async function init() {
   await loadEmojiData();
 
   chips = loadBox();
+  presets = loadPresets();
+  boxClosed = loadClosedState();
 
   renderChips();
+  showLaunchScreen();
   setupKeyboardViewportFix();
   registerServiceWorker();
   sweepOrphanedPhotos();

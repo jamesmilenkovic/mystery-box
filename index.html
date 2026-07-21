@@ -20,13 +20,40 @@
 </head>
 <body>
 
+<!-- ============ PRESET LIST (saved boxes) ============ -->
+<section id="preset-screen" hidden>
+  <h1 class="title">Mystery Box</h1>
+
+  <div id="preset-list" class="preset-list" aria-live="polite"></div>
+
+  <button id="preset-new-button" class="go-button" type="button">New box</button>
+
+  <button id="preset-grownups-button" class="grownups-button grownups-button-static" type="button" aria-label="Grown-ups options">
+    Grown-ups
+  </button>
+</section>
+
+<!-- ============ MANAGE PRESETS SHEET (grown-up gated) ============ -->
+<div id="manage-presets-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet manage-presets-content" role="dialog" aria-modal="true" aria-label="Manage boxes">
+    <p class="sheet-title">Manage boxes</p>
+    <div id="manage-presets-list" class="manage-presets-list"></div>
+    <button id="manage-presets-done" class="parent-action parent-action-done" type="button">Done</button>
+  </div>
+</div>
+
 <!-- ============ SETUP SCREEN (parent) ============ -->
-<section id="setup-screen">
+<section id="setup-screen" hidden>
   <h1 class="title">Mystery Box</h1>
 
   <div id="chip-list" class="chip-list" aria-live="polite"></div>
 
-  <button id="clear-button" class="clear-button" type="button" hidden>Clear all</button>
+  <div class="setup-links">
+    <button id="save-box-button" class="clear-button" type="button" hidden>Save box</button>
+    <button id="clear-button" class="clear-button" type="button" hidden>Clear all</button>
+  </div>
+
+  <div id="photo-toast" class="toast" role="status" aria-live="polite" hidden>Didn&rsquo;t work &mdash; try again</div>
 
   <div class="entry-row">
     <button id="photo-button" class="photo-button" type="button" aria-label="Add a photo option">📷</button>
@@ -86,6 +113,29 @@
   </div>
 </div>
 
+<!-- ============ SAVE-AS-PRESET SHEET ("Keep this box?") ============ -->
+<div id="save-preset-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet save-preset-content" role="dialog" aria-modal="true" aria-label="Keep this box?">
+    <p class="sheet-title">Keep this box?</p>
+    <div class="save-preset-row">
+      <button id="preset-icon-button" class="chip-emoji preset-icon-button" type="button" aria-label="Change this box's icon"></button>
+      <input
+        id="preset-name-input"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="words"
+        placeholder="Name this box&hellip;"
+        class="option-input"
+      />
+    </div>
+    <p id="preset-cap-hint" class="count-hint" hidden>You&rsquo;ve saved the max of 12 boxes &mdash; delete one to add another.</p>
+    <button id="preset-save-button" class="parent-action parent-action-done" type="button" disabled>Save</button>
+    <button id="preset-save-cancel" class="parent-action" type="button">Not now</button>
+  </div>
+</div>
+
 <!-- ============ KID MODE ============ -->
 <section id="kid-screen" hidden>
   <div id="box-stage" class="box-stage">
@@ -104,21 +154,40 @@
       </svg>
     </button>
 
+    <!-- "Closed for now" state (SPEC.md workstream B3): shown instead of
+         mysteryBox when a parent has closed the box. No idle-wobble/invite
+         animation, not spinnable. -->
+    <div id="box-closed" class="box-closed" hidden aria-hidden="true">
+      <div class="box-closed-emoji">😴</div>
+      <p class="box-closed-label">Closed for now</p>
+    </div>
+
     <div id="reveal-screen" class="reveal-screen" hidden>
       <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
       <div id="reveal-emoji" class="reveal-emoji"></div>
       <div id="reveal-label" class="reveal-label"></div>
+      <button id="reveal-save-button" class="reveal-save-button" type="button">Keep this box?</button>
     </div>
   </div>
 
-  <button id="parent-dot" class="parent-dot" type="button" aria-label="Parent options"></button>
+  <!-- Visible grown-ups gate (SPEC.md workstream B1) — replaces the old
+       invisible corner dot. Same ~1.5s hold-to-open gate; a quick tap is a
+       no-op. Kids can see it but can't use it. -->
+  <button id="grownups-button" class="grownups-button" type="button" aria-label="Grown-ups options">Grown-ups</button>
+
+  <!-- One-time first-run hint (workstream B4), dismissed forever once seen. -->
+  <div id="grownups-hint" class="grownups-hint" hidden>
+    <span>Hold for grown-ups</span>
+    <button id="grownups-hint-close" type="button" aria-label="Dismiss hint">&times;</button>
+  </div>
 </section>
 
 <!-- ============ PARENT SHEET ============ -->
 <div id="parent-sheet" class="sheet-backdrop" hidden>
-  <div class="sheet parent-sheet-content" role="dialog" aria-modal="true" aria-label="Parent options">
-    <button id="parent-respin" class="parent-action" type="button">Re-spin</button>
-    <button id="parent-edit" class="parent-action" type="button">Edit options</button>
+  <div class="sheet parent-sheet-content" role="dialog" aria-modal="true" aria-label="Grown-up options">
+    <button id="parent-respin" class="parent-action" type="button">Spin again</button>
+    <button id="parent-newbox" class="parent-action" type="button">New box</button>
+    <button id="parent-toggle-closed" class="parent-action" type="button">Close the box</button>
     <button id="parent-done" class="parent-action parent-action-done" type="button">Done</button>
   </div>
 </div>
